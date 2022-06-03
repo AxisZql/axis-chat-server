@@ -1,0 +1,4 @@
+[logic]
+rpcAddress = "tcp@localhost@9100;tcp@localhost@9101"
+cerPath = ""
+keyPath = ""
