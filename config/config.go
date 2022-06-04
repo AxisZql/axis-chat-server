@@ -14,13 +14,20 @@ import (
 *DESC: the configuration parse for this project
  */
 
+const (
+	SuccessReplyCode   = 0
+	FailReplyCode      = 1
+	RedisBaseValidTime = 86400
+)
+
 type Config struct {
 	Common struct {
 		Db struct {
-			Address  string `mapstructure:"address"`
-			Username string `mapstructure:"username"`
-			Password string `mapstructure:"password"`
-			DbName   string `mapstructure:"dbName"`
+			Address   string `mapstructure:"address"`
+			Username  string `mapstructure:"username"`
+			Password  string `mapstructure:"password"`
+			DbName    string `mapstructure:"dbName"`
+			InitModel bool   `mapstructure:"dbName"`
 		} `mapstructure:"db"`
 
 		Redis struct {
@@ -67,7 +74,6 @@ var (
 )
 
 func GetConfig() *Config {
-	InitConfig()
 	return &conf
 }
 

@@ -75,20 +75,10 @@ message GetUserInfoByAccessTokenRequest{
   string access_token = 1;
 }
 
-message User {
-  int64 userid = 1;
-  string username = 2;
-  string avatar = 3;
-  int32 role = 4;
-  int32 status = 5;
-  string tag = 6;
-  int64 create_at = 7;
-  int64 update_at = 8;
-}
-
 message GetUserInfoByAccessTokenReply{
   int32 code = 1;
-  User user = 2;
+  int64 userid = 2;
+  string username = 3;
 }
 
 message GetUserInfoByUseridRequest {
@@ -97,7 +87,19 @@ message GetUserInfoByUseridRequest {
 
 message GetUserInfoByUseridReply{
   int32 code = 1;
-  User user = 2;
+  int64 userid = 2;
+  string username = 3;
+}
+
+message User {
+  int64 userid = 1;
+  string username = 2;
+  string avatar = 3;
+  string role = 4;
+  int32 status = 5;
+  string tag = 6;
+  int64 create_time = 7;
+  int64 update_time = 8;
 }
 
 message UpdateUserInfoRequest{
@@ -121,7 +123,7 @@ message SearchUserRequest{
 }
 
 message SearchUserReply{
-  repeated User user_list = 1;
+  User user = 1;
 }
 
 message Group {
@@ -129,8 +131,8 @@ message Group {
   int64 userid = 2;
   string group_name = 3;
   string notice = 4;
-  int64  create_at = 5;
-  int64 update_at = 6;
+  int64  create_time = 5;
+  int64 update_time = 6;
 }
 
 message SearchGroupRequest{
@@ -138,7 +140,7 @@ message SearchGroupRequest{
 }
 
 message SearchGroupReply{
-  repeated Group group_list = 1;
+  Group group = 1;
 }
 
 message ChatMessage {
@@ -148,7 +150,7 @@ message ChatMessage {
   int64 friend_id = 4;
   string content = 5;
   string message_type = 6;
-  int64 create_at = 7;
+  int64 create_time = 7;
   string from_username = 8;
   string friend_name = 9;
   string group_name = 10;
@@ -158,7 +160,7 @@ message GetGroupMsgByPageRequest {
   int64 group_id = 1;
   int64 userid = 2;
   int64 current = 3;
-  int64 page_size = 4;
+  int64 page_size =4;
 }
 
 message GetGroupMsgByPageReply{
@@ -171,12 +173,11 @@ message GetFriendMsgByPageRequest{
   int64 friend_id = 1;
   int64 userid = 2;
   int64 current = 3;
-  int64 page_size = 4;
+  int64 page_size =4;
 }
 
 message GetFriendMsgByPageReply{
-  int32 code = 1;
-  repeated ChatMessage message_arr = 2;
+  repeated ChatMessage message_arr = 1;
 }
 
 message AddGroupRequest{

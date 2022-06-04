@@ -3,6 +3,7 @@ address = "localhost@3306"
 username = "root"
 password = ""
 dbName = "axisChat"
+initModel = true
 
 [redis]
 address = "localhost@6379;localhost@6380"

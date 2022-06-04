@@ -20,18 +20,19 @@ import (
 *DESC: redis相关配置
  */
 
-type Filed string
-
 // SESSION map token to userinfo
-const SESSION Filed = "axis:session:%s"
+const SESSION string = "axis:session:%s"
 
-const USERID_MAP_TOKEN Filed = "axis:user_map_token:%d"
+const UseridMapToken string = "axis:user_map_token:%d"
 
-// GROUP_ONLINE_USER map groupId to record the group all online user`s id
-const GROUP_ONLINE_USER Filed = "axis:group_online_user:%d"
+// GroupOnlineUser map groupId to record the group all online user`s name
+const GroupOnlineUser string = "axis:group_online_user:%d"
 
-// GROUP_ONLINE_USER_COUNT map groupId to the group online user count
-const GROUP_ONLINE_USER_COUNT = "axis:group_online_user_count:%d"
+// GroupOnlineUserCount map groupId to the group online user count
+const GroupOnlineUserCount string = "axis:group_online_user_count:%d"
+
+// UseridMapServerId TODO:记录对应id的用户在connect上哪个独立服务上，方便后期投递消息时可以找到对应用户的连接实例，从而实现消息的投递
+const UseridMapServerId string = "axis:userid_map_serverid:%d"
 
 type RedisClient struct {
 	Client map[string]*redis.Client
@@ -166,4 +167,132 @@ func getSetCache(c *CacheOptions) (err error) {
 		}
 	}
 	return
+}
+
+func RedisSetString(key string, value []byte, expire time.Duration) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.Set(key, value, expire).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+func RedisGetString(key string) ([]byte, error) {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return nil, err
+	}
+	res, err := client.Get(key).Bytes()
+	if err != nil && err != redis.Nil {
+		zlog.Error(err.Error())
+		return nil, err
+	}
+	return res, nil
+}
+
+func RedisDelString(key string) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.Del(key).Err()
+	if err != nil && err != redis.Nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+func RedisSetSet(key string, filed string, value interface{}) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	if client.HGet(key, fmt.Sprintf(filed)).Val() == "" {
+		err = client.HSet(key, filed, value).Err()
+		if err != nil {
+			zlog.Error(err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func RedisHGetAll(key string) (map[string]string, error) {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return nil, err
+	}
+	res, err := client.HGetAll(key).Result()
+	if err != nil {
+		zlog.Error(err.Error())
+		return nil, err
+	}
+	return res, nil
+}
+
+func RedisHGet(key string, filed string) (string, error) {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return "", err
+	}
+	res, err := client.HGet(key, filed).Result()
+	if err != nil {
+		zlog.Error(err.Error())
+		return "", err
+	}
+	return res, nil
+}
+
+func RedisHDel(key string, filed string) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.HDel(key, filed).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+func RedisInc(key string) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.Incr(key).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+func RedisDecr(key string) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.Decr(key).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
 }
