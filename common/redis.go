@@ -34,6 +34,12 @@ const GroupOnlineUserCount string = "axis:group_online_user_count:%d"
 // UseridMapServerId TODO:记录对应id的用户在connect上哪个独立服务上，方便后期投递消息时可以找到对应用户的连接实例，从而实现消息的投递
 const UseridMapServerId string = "axis:userid_map_serverid:%d"
 
+// UserGroupList 用户加入的群聊id列表
+const UserGroupList string = "axis:user_group_list:%d"
+
+// KafkaTopicOffset 记录kafka最后一次提交的偏移量
+const KafkaTopicOffset string = "axis:kafka_topic_offset:%s"
+
 type RedisClient struct {
 	Client map[string]*redis.Client
 }

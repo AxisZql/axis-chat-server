@@ -2,6 +2,8 @@ package main
 
 import (
 	"axisChat/config"
+	"axisChat/connect"
+	"axisChat/logic"
 	"fmt"
 	"github.com/spf13/cobra"
 	"os"
@@ -31,10 +33,10 @@ func Execute() {
 	switch module {
 	case "logic":
 		// 逻辑层服务
-
+		logic.New().Run()
 	case "connect_websocket":
 		// connect层websocket方式的服务
-
+		connect.New().Run()
 	case "connect_tcp":
 		// connect层tcp方式的服务
 

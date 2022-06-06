@@ -2,7 +2,7 @@
 
 > 该目录是logic（逻辑层）RPC的服务的定义和实现
 
-##### Conncet-RPC
+##### Logic-RPC
 
 
 
