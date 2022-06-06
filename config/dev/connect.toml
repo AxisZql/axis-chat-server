@@ -1,0 +1,9 @@
+[connect-bucket]
+cpuNum = 4
+
+[connect-websocket]
+host = "localhost"
+bind = "0.0.0.0:8100"
+rpcAddress = "tcp@9200;tcp@9201"
+cerPath = ""
+keyPath = ""

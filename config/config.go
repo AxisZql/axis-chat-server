@@ -61,10 +61,23 @@ type Config struct {
 
 	LogicRpc struct {
 		Logic struct {
+			Host       string `mapstructure:"host"`
 			RpcAddress string `mapstructure:"rpcAddress"`
 			CerPath    string `mapstructure:"cerPath"`
 			KeyPath    string `mapstructure:"keyPath"`
 		} `mapstructure:"logic"`
+	}
+	ConnectRpc struct {
+		ConnectBucket struct {
+			CpuNum int `mapstructure:"cpuNum"`
+		} `mapstructure:"connect-bucket"`
+		ConnectWebsocket struct {
+			Host       string `mapstructure:"host"`
+			Bind       string `mapstructure:"bind"` //websocket服务监听的端口
+			RpcAddress string `mapstructure:"rpcAddress"`
+			CerPath    string `mapstructure:"cerPath"`
+			KeyPath    string `mapstructure:"keyPath"`
+		}
 	}
 }
 
@@ -116,7 +129,7 @@ func InitConfig() {
 		}
 		_ = viper.Unmarshal(&conf.Api)
 		_ = viper.Unmarshal(&conf.Common)
-		//_ = viper.Unmarshal(&conf.Connect)
+		_ = viper.Unmarshal(&conf.ConnectRpc)
 		_ = viper.Unmarshal(&conf.LogicRpc)
 		//_ = viper.Unmarshal(&conf.Task)
 

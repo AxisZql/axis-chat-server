@@ -16,7 +16,7 @@ username = ""
 password = ""
 
 [etcd]
-address = "localhost@2379"
+address = "localhost:2379"
 basePath = "/axis_chat"
 serverPathLogic = "logicRpc"
 serverPathConnet = "connectRpc"
