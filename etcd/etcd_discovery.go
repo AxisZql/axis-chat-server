@@ -3,10 +3,7 @@ package etcd
 import (
 	"context"
 	"log"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/coreos/etcd/mvcc/mvccpb"
@@ -105,31 +102,4 @@ func (s *ServiceDiscovery) GetServices() []string {
 //Close 关闭服务
 func (s *ServiceDiscovery) Close() error {
 	return s.cli.Close()
-}
-
-func main() {
-	var endpoints = []string{"localhost:2379"}
-	ser := NewServiceDiscovery(endpoints)
-	defer ser.Close()
-
-	err := ser.WatchService("/server/")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// 监控系统信号，等待 ctrl + c 系统信号通知服务关闭
-	c := make(chan os.Signal, 1)
-	go func() {
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-	}()
-
-	for {
-		select {
-		case <-time.Tick(10 * time.Second):
-			log.Println(ser.GetServices())
-		case <-c:
-			log.Println("server discovery exit")
-			return
-		}
-	}
 }

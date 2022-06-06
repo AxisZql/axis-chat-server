@@ -3,9 +3,6 @@ package etcd
 import (
 	"context"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"go.etcd.io/etcd/clientv3"
@@ -90,23 +87,4 @@ func (s *ServiceRegister) Close() error {
 	}
 	log.Println("撤销租约")
 	return s.cli.Close()
-}
-
-func main() {
-	var endpoints = []string{"localhost:2379"}
-
-	ser, err := NewServiceRegister(endpoints, "/server/node1", "localhost:8000", 6, 5)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	//监听续租相应chan
-	go ser.ListenLeaseRespChan()
-
-	// 监控系统信号，等待 ctrl + c 系统信号通知服务关闭
-	c := make(chan os.Signal, 1)
-	go func() {
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-	}()
-	log.Printf("exit %s", <-c)
-	ser.Close()
 }
