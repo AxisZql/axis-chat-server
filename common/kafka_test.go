@@ -31,13 +31,13 @@ func GetAllTopic() {
 
 func TestTopicProduce(t *testing.T) {
 	GetAllTopic()
-	for i := 0; i < 10; i++ {
-		_ = TopicProduce("userA", []byte("你好👌2"+fmt.Sprintf("%d", i)))
-	}
+	//for i := 0; i < 10; i++ {
+	//	_ = TopicProduce("userA", []byte("你好👌2"+fmt.Sprintf("%d", i)))
+	//}
 }
 
 func TestTopicConsume(t *testing.T) {
 	GetAllTopic()
-	TopicConsume("userA-g2", "userA")
-	TopicConsume("userA-g1", "userA")
+	//TopicConsume("userA-g2", "userA")
+	//TopicConsume("userA-g1", "userA")
 }

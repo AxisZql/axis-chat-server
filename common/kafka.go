@@ -72,9 +72,7 @@ func getProducerConn(objectId int64, _type string) (*kafka.Conn, error) {
 	}
 	producerConnMap.mutex.RLock()
 	if conn, ok := producerConnMap.SocketMap[topic]; ok {
-		producerConnMap.mutex.Lock()
 		producerConnMap.CreateTime[topic] = time.Now()
-		producerConnMap.mutex.Unlock()
 		producerConnMap.mutex.RUnlock()
 		return conn, nil
 	}
@@ -131,18 +129,19 @@ func GetConsumeReader(objectId int64, topic string) (*kafka.Reader, error) {
 	return reader, nil
 }
 
-func TopicConsume(reader *kafka.Reader) error {
-	for {
-		msg, err := reader.FetchMessage(context.Background())
-		if err != nil {
-			zlog.Error(err.Error())
-			return err
-		}
-		fmt.Println(msg.Offset, string(msg.Key), string(msg.Value))
-		// TODO：消费确认，提交偏移量，只有提交量偏移量才能证明消息被正常消费
-		if err := reader.CommitMessages(context.Background(), msg); err != nil {
-			zlog.Error(fmt.Sprintf("failed to commit messages:%v", err))
-			return err
-		}
+func TopicConsume(reader *kafka.Reader) (msg kafka.Message, err error) {
+	msg, err = reader.FetchMessage(context.Background())
+	if err != nil {
+		zlog.Error(err.Error())
+		return
 	}
+	return
+}
+
+func TopicConsumerConfirm(reader *kafka.Reader, msg kafka.Message) error {
+	if err := reader.CommitMessages(context.Background(), msg); err != nil {
+		zlog.Error(fmt.Sprintf("failed to commit messages:%v", err))
+		return err
+	}
+	return nil
 }
