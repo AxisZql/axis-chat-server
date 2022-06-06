@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "logic.proto";
+option go_package = "./;proto";
+
+/**
+*Author: AxisZql
+*Date: 2022-5-31
+*DESC: connect layer rpc interface define（连接层rpc接口定义）因为防止网络传输出现问题（消息的消费确认必须在Connect层）
+ */
+
+service ConnectLayer {
+  rpc PushGroupInfoMsg(PushGroupInfoMsgReq) returns(google.protobuf.Empty);
+  rpc PushGroupCountMsg(PushGroupCountMsgReq) returns(google.protobuf.Empty);
+  rpc PushFriendOnlineMsg(PushFriendOnlineMsgReq) returns(google.protobuf.Empty);
+  rpc PushFriendOfflineMsg(PushFriendOfflineMsgReq) returns(google.protobuf.Empty);
+  rpc PushGroupMsg(PushGroupMsgReq) returns(google.protobuf.Empty);
+  rpc PushFriendMsg(PushFriendMsgReq) returns(google.protobuf.Empty);
+}
+
+
+// 推送过来的消息包括对应消息的topic名称，partition、offset（提交消息确认时offset+1）
+message kafkaMsgInfo{
+  string topic = 1;
+  int32 partition = 2;
+  int64 offset = 3;
+}
+
+
+message PushGroupInfoMsgReq{
+  message Msg{
+    int64 group_id = 1;
+    int32 count = 2;
+    repeated User user_arr = 3; // 群成员列表
+    int32 op = 4;
+  } Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}
+
+message PushGroupCountMsgReq{
+  message Msg {
+    int64 group_id = 1;
+    int32 count = 2;
+    int32 op = 3;
+  } Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}
+
+message PushFriendOnlineMsgReq{
+  message Msg {
+    int64 friend_id = 1;//上线方id
+    string friend_name = 2;
+    int32 op = 3;
+  }Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}
+
+message PushFriendOfflineMsgReq  {
+  message Msg {
+    int64 friend_id = 1;
+    int32 op = 2;
+  }Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}
+
+message PushGroupMsgReq {
+  message Msg {
+    int64 userid = 1;
+    int64 group_id = 2;
+    string content = 3;
+    string message_type = 4;
+    string group_name = 5;
+    string from_username = 6;
+    int64 create_at = 7;
+    int32 op = 8;
+  }Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}
+
+message PushFriendMsgReq {
+  message Msg {
+    int64 userid = 1;
+    int64 friend_id = 2;
+    string content = 3;
+    string message_type = 4;
+    string group_name = 5;
+    string from_username = 6;
+    int64 create_at = 7;
+    int32 op = 8;
+  }Msg msg = 1;
+  kafkaMsgInfo kafka_info = 2;
+}

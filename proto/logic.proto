@@ -12,6 +12,8 @@ option go_package = "./;proto";
 service Logic{
   rpc Connect(ConnectRequest) returns(ConnectReply); // 用户连接服务
   rpc DisConnect(DisConnectRequest) returns(google.protobuf.Empty); // 用户断开服务
+  //==========以上两个方法是给connect层进行调用，以下方法则是给API层来调用的
+
   rpc Register(RegisterRequest) returns(RegisterReply);// 新用户注册
   rpc Login(LoginRequest) returns(LoginReply);//登陆
   rpc LoginOut(LoginOutRequest) returns(google.protobuf.Empty);//登出
@@ -30,8 +32,6 @@ service Logic{
   rpc PushRoom(PushRoomRequest) returns(google.protobuf.Empty);//群聊消息推送
   rpc PushRoomCount(PushRoomCountRequest) returns(google.protobuf.Empty);//推送群聊在线人数消息
   rpc PushRoomInfo(PushRoomInfoRequest) returns(google.protobuf.Empty);//推送群聊信息消息
-
-
 }
 
 message ConnectRequest{
