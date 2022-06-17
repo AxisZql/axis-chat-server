@@ -63,31 +63,19 @@ func (ws *WsServer) writePump(ch *Channel) {
 			zlog.Debug(fmt.Sprintf("message write body:%s", string(msg.Value)))
 			_, err = w.Write(msg.Value)
 			if err != nil {
-				// TODO:BUG 如果redis这里出现异常的话，则无法确保当前消息是否已经被其他serverId消费了
-				res, err := common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic))
-				if err != nil {
-					zlog.Error(fmt.Sprintf("common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, %s))", msg.Topic))
-				}
-				offset, _ := strconv.Atoi(string(res))
-				if int64(offset) <= msg.Offset-1 {
-					// 如果当前消息没有被其他服务成功消费
-					zlog.Warn(fmt.Sprintf("w.Write err :%v", err))
-					// TODO：没有成功发送消息则重置偏移量
-					err = KafkaConsumeReader.SetOffset(msg.Offset)
-					if err != nil {
-						zlog.Error(fmt.Sprintf("KafkaConsumeReader.SetOffset err :%v", err))
-						return
-					}
-				}
-				// todo 如果当前消息被成功消费了offset>=msg.Offset 则不用重置偏移量，因为消费后的消息已经持久化到db中了
+				zlog.Error(fmt.Sprintf("push msg get err: %v", err))
 			} else {
+				// todo 如果当前消息被成功消费了offset>=msg.Offset 则不用提交确认消费的偏移量，因为消费后的消息已经持久化到db中了
 				res, err := common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic))
 				if err != nil {
 					zlog.Error(fmt.Sprintf("common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, %s))", msg.Topic))
 				}
 				offset, _ := strconv.Atoi(string(res))
-				if int64(offset) <= msg.Offset-1 {
-					// 证明该消息还没有正常被提交消费
+				if int64(offset) >= msg.Offset {
+					// 证明该消息已经被其他服务消费过（群聊消息会出现这种情况）
+					zlog.Info(fmt.Sprintf("msg:%v have been consumed by other server 「offset=%d」", msg, offset))
+				} else {
+					// 第一次被成功消费
 					// TODO 消息成功被消费，向kafka中当前topic对应的消费组中提交偏移量
 					err = common.TopicConsumerConfirm(KafkaConsumeReader, msg)
 					if err != nil {
@@ -98,6 +86,13 @@ func (ws *WsServer) writePump(ch *Channel) {
 					if err != nil {
 						zlog.Error(fmt.Sprintf("common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), msg.Offset, 0) err: %v", err))
 					}
+					// todo 将成功消费消息的操作写入redis消息队列以此来通知对应的task层进行下一步的消息推送
+					err = common.RedisRPUSH(fmt.Sprintf(common.KafkaCommitTrigger, msg.Topic), msg.Offset)
+					if err != nil {
+						zlog.Error(fmt.Sprintf("common.RedisRPUSH err: %v", err))
+					}
+
+					//todo task 此处需要持久化消息到db中
 				}
 			}
 			if err = w.Close(); err != nil {
