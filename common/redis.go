@@ -23,13 +23,14 @@ import (
 // SESSION map token to userinfo
 const SESSION string = "axis:session:%s"
 
+// UseridMapToken map the access_token to userid
 const UseridMapToken string = "axis:user_map_token:%d"
 
 // GroupOnlineUser map groupId to record the group all online user`s name
 const GroupOnlineUser string = "axis:group_online_user:%d"
 
-// GroupOnlineUserCount map groupId to the group online user count
-const GroupOnlineUserCount string = "axis:group_online_user_count:%d"
+// GroupOnlineUserCount map groupId to the group online user count todo:改变存储方式，利用hash table存放（因为一致性哈希的造成的key分散问题
+const GroupOnlineUserCount string = "axis:group_online_user_count"
 
 // UseridMapServerId TODO:记录对应id的用户在connect上哪个独立服务上，方便后期投递消息时可以找到对应用户的连接实例，从而实现消息的投递
 const UseridMapServerId string = "axis:userid_map_serverid:%d"
@@ -37,8 +38,14 @@ const UseridMapServerId string = "axis:userid_map_serverid:%d"
 // UserGroupList 用户加入的群聊id列表
 const UserGroupList string = "axis:user_group_list:%d"
 
-// KafkaTopicOffset 记录kafka最后一次提交的偏移量
+// AllOnlineUser 记录所有在线用户
+const AllOnlineUser string = "axis:online_user"
+
+// KafkaTopicOffset 记录kafka最后一次提交的偏移量,topic名和最新提交偏移量的映射
 const KafkaTopicOffset string = "axis:kafka_topic_offset:%s"
+
+// KafkaCommitTrigger  利用List实现简单的消息队列，每当connect支持消费一个消息时将该消息偏移量写入该消息队列
+const KafkaCommitTrigger string = "axis:kafka_commit_trigger:%s"
 
 type RedisClient struct {
 	Client map[string]*redis.Client
@@ -217,7 +224,8 @@ func RedisDelString(key string) error {
 	return nil
 }
 
-func RedisSetSet(key string, filed string, value interface{}) error {
+// RedisIsNotExistHSet  只有当hash table没有对应filed才会进行设置
+func RedisIsNotExistHSet(key string, filed string, value interface{}) error {
 	client, err := GetRedisClientByKey(key)
 	if err != nil {
 		zlog.Error(err.Error())
@@ -229,6 +237,34 @@ func RedisSetSet(key string, filed string, value interface{}) error {
 			zlog.Error(err.Error())
 			return err
 		}
+	}
+	return nil
+}
+
+func RedisHSet(key string, filed string, value interface{}) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	if err := client.HSet(key, filed, value).Err(); err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+// RedisHINCRBY hash table filed 增量
+func RedisHINCRBY(key string, filed string, increment int64) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.HIncrBy(key, filed, increment).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
 	}
 	return nil
 }
@@ -301,4 +337,37 @@ func RedisDecr(key string) error {
 		return err
 	}
 	return nil
+}
+
+func RedisRPUSH(key string, value ...interface{}) error {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	err = client.RPush(key, value).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+func RedisBRPOP(key string, timeOut time.Duration) (string, error) {
+	client, err := GetRedisClientByKey(key)
+	if err != nil {
+		zlog.Error(err.Error())
+		return "", err
+	}
+	var result []string
+	result, err = client.BRPop(timeOut, key).Result()
+	if err != nil {
+		zlog.Error(err.Error())
+		return "", err
+	}
+	if len(result) >= 2 {
+		return result[1], nil
+	}
+	zlog.Error("unforeseen circumstances")
+	return "", errors.New("unforeseen circumstances")
 }
