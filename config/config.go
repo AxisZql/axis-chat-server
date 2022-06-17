@@ -61,6 +61,7 @@ type Config struct {
 
 	LogicRpc struct {
 		Logic struct {
+			ServerId   string `mapstructure:"serverId"`
 			Host       string `mapstructure:"host"`
 			RpcAddress string `mapstructure:"rpcAddress"`
 			CerPath    string `mapstructure:"cerPath"`
