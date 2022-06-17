@@ -28,7 +28,7 @@ func TestEtcdDiscover(t *testing.T) {
 	for {
 		select {
 		case <-time.Tick(10 * time.Second):
-			log.Println(ser.GetServices())
+			log.Println(ser.GetServiceByServerId(""))
 		case <-c:
 			log.Println("server discovery exit")
 			return
