@@ -5,7 +5,6 @@ import (
 	"axisChat/etcd"
 	"axisChat/proto"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"net"
@@ -27,8 +26,9 @@ func New() *Logic {
 }
 
 func (logic *Logic) Run() {
-	logic.ServerId = fmt.Sprintf("logic-%s", uuid.New().String())
+	//logic.ServerId = fmt.Sprintf("logic-%s", uuid.New().String())
 	conf := config.GetConfig().LogicRpc.Logic
+	logic.ServerId = conf.ServerId
 	list := strings.Split(conf.RpcAddress, ";")
 	for _, val := range list {
 		err := initLogicRpcServer(val, logic.ServerId)
@@ -69,7 +69,7 @@ func registerServer2Etcd(address string, serverId string) {
 		panic("at least one ETCD service is required !")
 	}
 	// TODO:logic层服务注册到etcd服务上到路径
-	serverPathInEtcd := fmt.Sprintf("%s/%s?serverId=%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathLogic, serverId)
+	serverPathInEtcd := fmt.Sprintf("%s/%s&serverId=%s&address=%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathLogic, serverId, address)
 	ser, err := etcd.NewServiceRegister(endpoint, serverPathInEtcd, address, 6, 5)
 	if err != nil {
 		panic(err)

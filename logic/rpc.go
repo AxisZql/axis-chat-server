@@ -52,14 +52,22 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 	var friendIdList []int64
 	db.QueryUserAllGroupId(user.ID, &groupIdList)
 	db.QueryUserAllFriendId(user.ID, &friendIdList)
+
+	// 更改对应用户的在线状态为在线
+	if err = common.RedisHSet(common.AllOnlineUser, fmt.Sprintf("%d", user.ID), "on"); err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+
 	// 更新该用户加入群聊的所有在redis中信息
 	for _, val := range groupIdList {
-		err := common.RedisSetSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), user.Username)
+		err := common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), user.Username)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
 		}
-		err = common.RedisInc(fmt.Sprintf(common.GroupOnlineUserCount, val))
+		// 更新hash table中对应群聊项的在线人数
+		err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), 1)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
@@ -67,7 +75,7 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 		//往群聊对应topic写入群聊在线人数更新信息 TODO:need to test
 		var userList []db.User
 		db.QueryGroupAllUser(val, &userList)
-		countStr, _ := common.RedisGetString(fmt.Sprintf(common.GroupOnlineUserCount, val))
+		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
 		count, _ := strconv.Atoi(string(countStr))
 		err = PushGroupInfo(user.ID, val, count, userList)
 		if err != nil {
@@ -90,6 +98,7 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 			return
 		}
 	}
+
 	return &proto.ConnectReply{
 		Userid: user.ID,
 	}, nil
@@ -103,6 +112,13 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 	var friendIdList []int64
 	db.QueryUserAllGroupId(request.Userid, &groupIdList)
 	db.QueryUserAllFriendId(request.Userid, &friendIdList)
+
+	// 更改对应用户的在线状态为下线,todo:不采取删除而是采取字段更改的原因是，删除对应field 频繁涉及空间的申请和释放
+	if err = common.RedisHSet(common.AllOnlineUser, fmt.Sprintf("%d", request.Userid), "off"); err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+
 	// 更新该用户加入群聊的所有在redis中信息
 	for _, val := range groupIdList {
 		err := common.RedisHDel(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", request.Userid))
@@ -110,7 +126,7 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 			err = errors.New("系统异常")
 			return
 		}
-		err = common.RedisDecr(fmt.Sprintf(common.GroupOnlineUserCount, val))
+		err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), -1)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
@@ -118,8 +134,8 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 		//往群聊对应topic写入群聊在线人数更新信息 TODO:need to test
 		var userList []db.User
 		db.QueryGroupAllUser(val, &userList)
-		countStr, _ := common.RedisGetString(fmt.Sprintf(common.GroupOnlineUserCount, val))
-		count, _ := strconv.Atoi(string(countStr))
+		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
+		count, _ := strconv.Atoi(countStr)
 		// TODO:往该群聊的的topic中生产消息
 		err = PushGroupInfo(request.Userid, val, count, userList)
 		if err != nil {
@@ -526,8 +542,8 @@ func (s *ServerLogic) PushRoom(ctx context.Context, request *proto.PushRoomReque
 }
 
 func (s *ServerLogic) PushRoomCount(ctx context.Context, request *proto.PushRoomCountRequest) (reply *empty.Empty, err error) {
-	countStr, _ := common.RedisGetString(fmt.Sprintf(common.GroupOnlineUserCount, request.GroupId))
-	count, _ := strconv.Atoi(string(countStr))
+	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
+	count, _ := strconv.Atoi(countStr)
 	// TODO:往该群聊的的topic中生产消息
 	err = PushGroupCount(request.GroupId, count)
 	if err != nil {
@@ -540,8 +556,8 @@ func (s *ServerLogic) PushRoomCount(ctx context.Context, request *proto.PushRoom
 func (s *ServerLogic) PushRoomInfo(ctx context.Context, request *proto.PushRoomInfoRequest) (reply *empty.Empty, err error) {
 	var userList []db.User
 	db.QueryGroupAllUser(request.GroupId, &userList)
-	countStr, _ := common.RedisGetString(fmt.Sprintf(common.GroupOnlineUserCount, request.GroupId))
-	count, _ := strconv.Atoi(string(countStr))
+	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
+	count, _ := strconv.Atoi(countStr)
 	// TODO:往该群聊的的topic中生产消息
 	err = PushGroupInfo(0, request.GroupId, count, userList)
 	if err != nil {

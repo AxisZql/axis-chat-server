@@ -1,4 +1,5 @@
 [logic]
+serverId = "logicRpcServer-axis"
 host = "localhost"
 rpcAddress = "tcp@9100;tcp@9101"
 cerPath = ""
