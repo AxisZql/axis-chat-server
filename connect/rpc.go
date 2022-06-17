@@ -11,107 +11,36 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
 	"github.com/segmentio/kafka-go"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"math/rand"
 	"strings"
-	"sync"
-	"time"
 )
 
-type LogicRpcClient struct {
-	mutex  sync.RWMutex
-	Client proto.LogicClient
-	cancel context.CancelFunc
-	ctx    context.Context
-	conn   *grpc.ClientConn
-	ser    *etcd.ServiceDiscovery
+type LogicRpcInstance struct {
+	ins      *etcd.Instance
+	serverId string
 }
 
 var (
-	logicRpcClient *LogicRpcClient
-	once           sync.Once
+	serDiscovery     *etcd.ServiceDiscovery
+	logicRpcInstance *LogicRpcInstance
 )
 
 // InitLogicClient 初始化获取logic层的rpc服务客户端
 func (c *Connect) InitLogicClient() {
 	conf := config.GetConfig()
 	etcdAddrList := strings.Split(conf.Common.Etcd.Address, ";")
-	logicRpcClient.ser = etcd.NewServiceDiscovery(etcdAddrList)
+	serDiscovery = etcd.NewServiceDiscovery(etcdAddrList)
 	//TODO：从etcd中 获取所有logic layer 的服务地址列表，并监听其改变
-	err := logicRpcClient.ser.WatchService(fmt.Sprintf("%s/%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathLogic))
-	rand.Seed(time.Now().Unix())
+	err := serDiscovery.WatchService(fmt.Sprintf("%s/%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathLogic))
 	if err != nil {
 		panic(err)
 	}
-	once.Do(func() {
-		logicRpcList := logicRpcClient.ser.GetServices()
-		idx := rand.Intn(len(logicRpcList))
-		addr := logicRpcList[idx]
-		if len(logicRpcList) == 0 {
-			err = logicRpcClient.ser.Close()
-			if err != nil {
-				zlog.Error(err.Error())
-			}
-			panic(errors.New("logic layer 没有可用服务"))
-		}
-		logicRpcClient.conn, err = grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			panic(err)
-		}
-		logicRpcClient.Client = proto.NewLogicClient(logicRpcClient.conn)
-		logicRpcClient.ctx, logicRpcClient.cancel = context.WithTimeout(context.Background(), time.Second*5)
-		// todo:实时监听logic层的服务变化，随机选择logic层某个可用的服务
-		go logicRpcClient.randomChoiceLogicRpcCanUseList()
-	})
-	if logicRpcClient.conn == nil {
-		panic("初始化logic层服务客户端失败")
-	}
-}
 
-func (lc *LogicRpcClient) randomChoiceLogicRpcCanUseList() {
-	defer func() {
-		lc.cancel()
-		err := lc.conn.Close()
-		if err != nil {
-			zlog.Error(err.Error())
-		}
-		err = lc.ser.Close()
-		if err != nil {
-			zlog.Error(err.Error())
-		}
-	}()
-	for {
-		select {
-		case <-time.Tick(10 * time.Second):
-			// todo 持有读锁读goroutine可用进行读和写操作
-			lc.mutex.RLock()
-			logicRpcList := lc.ser.GetServices()
-			if len(logicRpcList) == 0 {
-				panic(errors.New("logic layer 没有可用服务"))
-			}
-			idx := rand.Intn(len(logicRpcList))
-			addr := logicRpcList[idx]
-			var err error
-			oldConn := logicRpcClient.conn
-			oldSer := logicRpcClient.ser
-			oldCancel := logicRpcClient.cancel
-			logicRpcClient.conn, err = grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				panic(err)
-			}
-			oldCancel()
-			err = oldConn.Close()
-			if err != nil {
-				zlog.Error(err.Error())
-			}
-			err = oldSer.Close()
-			if err != nil {
-				zlog.Error(err.Error())
-			}
-			lc.mutex.RUnlock()
-		}
+	// 轮询获取对应serverId下的logic layer rpc服务实例
+	logicRpcInstance.ins, err = serDiscovery.GetServiceByServerId(conf.LogicRpc.Logic.ServerId)
+	if err != nil {
+		panic(err.Error())
 	}
+	logicRpcInstance.serverId = conf.LogicRpc.Logic.ServerId
 }
 
 type ServerConnect struct{}

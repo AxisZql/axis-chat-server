@@ -90,7 +90,7 @@ func registerServer2Etcd(address string, serverId string) {
 		panic("at least one ETCD service is required !")
 	}
 	// TODO:logic层服务注册到etcd服务上到路径
-	serverPathInEtcd := fmt.Sprintf("%s/%s?serverId=%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathConnect, serverId)
+	serverPathInEtcd := fmt.Sprintf("%s/%s&serverId=%s&address=%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathConnect, serverId, address)
 	ser, err := etcd.NewServiceRegister(endpoint, serverPathInEtcd, address, 6, 5)
 	if err != nil {
 		panic(err)
@@ -100,7 +100,14 @@ func registerServer2Etcd(address string, serverId string) {
 }
 
 func (c *Connect) Connect(accessToken, serverId string) (userid int64, err error) {
-	reply, err := logicRpcClient.Client.Connect(logicRpcClient.ctx, &proto.ConnectRequest{
+	// 首先获取实例
+	logicRpcInstance.ins, err = serDiscovery.GetServiceByServerId(logicRpcInstance.serverId)
+	if err != nil {
+		zlog.Error(err.Error())
+		return
+	}
+	logicClient := proto.NewLogicClient(logicRpcInstance.ins.Conn)
+	reply, err := logicClient.Connect(logicRpcInstance.ins.Ctx, &proto.ConnectRequest{
 		AccessToken: accessToken,
 		ServerId:    serverId,
 	})
@@ -113,7 +120,14 @@ func (c *Connect) Connect(accessToken, serverId string) (userid int64, err error
 }
 
 func (c *Connect) DisConnect(userid int64) (err error) {
-	_, err = logicRpcClient.Client.DisConnect(logicRpcClient.ctx, &proto.DisConnectRequest{
+	// 首先获取实例
+	logicRpcInstance.ins, err = serDiscovery.GetServiceByServerId(logicRpcInstance.serverId)
+	if err != nil {
+		zlog.Error(err.Error())
+		return
+	}
+	logicClient := proto.NewLogicClient(logicRpcInstance.ins.Conn)
+	_, err = logicClient.DisConnect(logicRpcInstance.ins.Ctx, &proto.DisConnectRequest{
 		Userid: userid,
 	})
 	if err != nil {
