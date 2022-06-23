@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func QueryUserById(id int64, user *User) {
+func QueryUserById(id int64, user *TUser) {
 	db := GetDb()
 	r := db.Where("id = ?", id).First(user)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
@@ -18,7 +18,7 @@ func QueryUserById(id int64, user *User) {
 	}
 }
 
-func QueryUserByUserName(username string, user *User) {
+func QueryUserByUserName(username string, user *TUser) {
 	db := GetDb()
 	r := db.Where("username = ?", username).First(user)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
@@ -30,10 +30,10 @@ func QueryUserByUserName(username string, user *User) {
 	}
 }
 
-func QueryUserAllGroupId(userid int64, groupIdList *[]int64) {
+func QueryUserAllGroupId(userid int64) (groupIdList []int64) {
 	db := GetDb()
-	var relationList []Relation
-	r := db.Where("object_a = ? AND type = ?", userid, "group").First(&relationList)
+	var relationList []TRelation
+	r := db.Where("object_a = ? AND type = ?", userid, "group").Find(&relationList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -41,15 +41,18 @@ func QueryUserAllGroupId(userid int64, groupIdList *[]int64) {
 	if r.Error != nil {
 		zlog.Info(r.Error.Error())
 	}
+	groupIdList = make([]int64, 0)
 	for _, val := range relationList {
-		*groupIdList = append(*groupIdList, val.ObjectB)
+		// todo slice 扩容后，其不一定指向原来的地址
+		groupIdList = append(groupIdList, val.ObjectB)
 	}
+	return groupIdList
 }
 
-func QueryUserAllFriendId(userid int64, friendIdList *[]int64) {
+func QueryUserAllFriendId(userid int64) (friendIdList []int64) {
 	db := GetDb()
-	var relationList []Relation
-	r := db.Where("object_a = ? AND type = ?", userid, "friend").First(&friendIdList)
+	var relationList []TRelation
+	r := db.Where("object_a = ? AND type = ?", userid, "friend").Find(&relationList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -57,14 +60,16 @@ func QueryUserAllFriendId(userid int64, friendIdList *[]int64) {
 	if r.Error != nil {
 		zlog.Info(r.Error.Error())
 	}
+	friendIdList = make([]int64, 0)
 	for _, val := range relationList {
-		*friendIdList = append(*friendIdList, val.ObjectB)
+		friendIdList = append(friendIdList, val.ObjectB)
 	}
+	return friendIdList
 }
 
-func SearchUserByUsername(query string, userList *[]User) {
+func SearchUserByUsername(query string, userList *[]TUser) {
 	db := GetDb()
-	r := db.Where(fmt.Sprintf("username like %q", "%"+query+"%")).First(userList)
+	r := db.Select([]string{"id", "username", "avatar", "role", "status", "tag", "create_at", "update_at"}).Where(fmt.Sprintf("username like %q", "%"+query+"%")).Find(userList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -74,19 +79,19 @@ func SearchUserByUsername(query string, userList *[]User) {
 	}
 }
 
-func CreateUser(user *User) {
+func CreateUser(user *TUser) {
 	db := GetDb()
-	r := db.Model(&User{}).Create(user)
+	r := db.Model(&TUser{}).Create(user)
 	if r.Error != nil {
 		zlog.Error(r.Error.Error())
 		return
 	}
 }
 
-func UpdateUser(user *User) {
+func UpdateUser(user *TUser) {
 	db := GetDb()
 	// 使用struct更新时Updates方法只会更新非零值字段
-	r := db.Updates(user)
+	r := db.Updates(user).Find(user)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -98,7 +103,7 @@ func UpdateUser(user *User) {
 
 func UpdateUserPassword(userid int64, encPwd string) error {
 	db := GetDb()
-	r := db.Model(&User{}).Where("id = ?", userid).Update("password", encPwd)
+	r := db.Model(&TUser{}).Where("id = ?", userid).Update("password", encPwd)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return r.Error
@@ -109,7 +114,7 @@ func UpdateUserPassword(userid int64, encPwd string) error {
 	return nil
 }
 
-func QueryGroupById(id int64, group *Group) {
+func QueryGroupById(id int64, group *TGroup) {
 	db := GetDb()
 	r := db.Where("id = ?", id).First(group)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
@@ -121,7 +126,7 @@ func QueryGroupById(id int64, group *Group) {
 	}
 }
 
-func QueryGroupByGroupName(groupName string, group *Group) {
+func QueryGroupByGroupName(groupName string, group *TGroup) {
 	db := GetDb()
 	r := db.Where("group_name = ?", groupName).First(group)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
@@ -133,9 +138,9 @@ func QueryGroupByGroupName(groupName string, group *Group) {
 	}
 }
 
-func SearchGroupByGroupName(query string, groupList *[]Group) {
+func SearchGroupByGroupName(query string, groupList *[]TGroup) {
 	db := GetDb()
-	r := db.Where(fmt.Sprintf("group_name like %q", "%"+query+"%")).First(groupList)
+	r := db.Where(fmt.Sprintf("group_name like %q", "%"+query+"%")).Find(groupList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -145,9 +150,9 @@ func SearchGroupByGroupName(query string, groupList *[]Group) {
 	}
 }
 
-func QueryGroupAllUser(groupId int64, userList *[]User) {
+func QueryGroupAllUser(groupId int64, userList *[]TUser) {
 	db := GetDb()
-	var relationList []Relation
+	var relationList []TRelation
 	r := db.Where("type = ? AND object_b = ?", "group", groupId).Find(&relationList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
@@ -160,7 +165,7 @@ func QueryGroupAllUser(groupId int64, userList *[]User) {
 	for _, val := range relationList {
 		allUserId = append(allUserId, val.ObjectA)
 	}
-	db.Where("object_a IN ? AND type = ?", allUserId, "group").Find(userList)
+	db.Select([]string{"id", "username", "avatar", "role", "status", "tag", "create_at", "update_at"}).Where("id IN ?", allUserId).Find(userList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -170,16 +175,16 @@ func QueryGroupAllUser(groupId int64, userList *[]User) {
 	}
 }
 
-func CreateGroup(group *Group) {
+func CreateGroup(group *TGroup) {
 	db := GetDb()
-	r := db.Model(&Group{}).Create(group)
+	r := db.Model(&TGroup{}).Create(group)
 	if r.Error != nil {
 		zlog.Error(r.Error.Error())
 		return
 	}
 }
 
-func UpdateGroup(group *Group) {
+func UpdateGroup(group *TGroup) {
 	db := GetDb()
 	// 使用struct更新时Updates方法只会更新非零值字段
 	r := db.Updates(group)
@@ -192,13 +197,13 @@ func UpdateGroup(group *Group) {
 	}
 }
 
-func QueryFriendMessageByPage(userid, friendId int64, msgList *[]Message, current int, pageSize int) {
+func QueryFriendMessageByPage(userid, friendId int64, msgList *[]VFriendMessage, current int, pageSize int) {
 	if current <= 0 || pageSize <= 0 {
 		current = 1
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Where("from_a = ? AND to_b = ? AND type = ?", userid, friendId, "friend").Limit(pageSize).Offset((current - 1) * pageSize).Order("snow_id ASC").Find(msgList)
+	r := db.Table("v_friend_message").Where("(userid = ? AND friend_id = ?) OR (friend_id = ? AND userid = ?)", userid, friendId, userid, friendId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -208,13 +213,13 @@ func QueryFriendMessageByPage(userid, friendId int64, msgList *[]Message, curren
 	}
 }
 
-func QueryGroupMessageByPage(userid, groupId int64, msgList *[]Message, current int, pageSize int) {
+func QueryGroupMessageByPage(groupId int64, msgList *[]VGroupMessage, current int, pageSize int) {
 	if current <= 0 || pageSize <= 0 {
 		current = 1
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Where("from_a = ? AND to_b = ? AND type = ?", userid, groupId, "group").Limit(pageSize).Offset((current - 1) * pageSize).Order("snow_id ASC").Find(msgList)
+	r := db.Table("v_group_message").Where("group_id = ?", groupId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -224,9 +229,9 @@ func QueryGroupMessageByPage(userid, groupId int64, msgList *[]Message, current 
 	}
 }
 
-func CreateRelation(relation *Relation) {
+func CreateRelation(relation *TRelation) {
 	db := GetDb()
-	r := db.Where("object_a = ? AND object_b = ? OR type = ?", relation.ObjectA, relation.ObjectB, relation.Type).First(relation)
+	r := db.Where("object_a = ? AND object_b = ? AND type = ?", relation.ObjectA, relation.ObjectB, relation.Type).First(relation)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -238,5 +243,14 @@ func CreateRelation(relation *Relation) {
 			zlog.Error(r.Error.Error())
 			return
 		}
+	}
+}
+
+func SaveMsg(msg *TMessage) {
+	db := GetDb()
+	r := db.Model(&TMessage{}).Create(msg)
+	if r.Error != nil {
+		zlog.Error(r.Error.Error())
+		return
 	}
 }

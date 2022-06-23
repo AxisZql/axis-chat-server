@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm/schema"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,8 +24,28 @@ import (
  */
 
 var (
-	once sync.Once
-	db   *gorm.DB
+	once          sync.Once
+	db            *gorm.DB
+	vGroupMessage = `
+    create view v_group_message as
+    select mg.*, t_user.username as 'from_username'
+    from (select m.*, t_group.group_name
+          from (select id, from_a as 'userid', to_b as 'group_id', content, message_type, create_at
+                from t_message
+                where type = 'group'
+                order by snow_id) m
+                   join t_group on m.group_id = t_group.id) mg
+             join t_user on t_user.id = mg.userid;`
+	vFriendMessage = `
+    create view v_friend_message as
+    select mf.*, t_user.username as 'from_username'
+    from (select m.*, friend.username as 'friend_name'
+          from (select id, from_a as 'userid', to_b as 'friend_id', content, message_type, create_at
+                from t_message
+                where type = 'friend'
+                order by snow_id) m
+                   join t_user as friend on m.friend_id = friend.id) mf
+             join t_user on t_user.id = mf.userid;`
 )
 
 // InitDb 初始化客户端连接配置
@@ -76,14 +97,29 @@ func InitDb() {
 
 func modelsInit() {
 	zlog.Info("models initializing...")
-	e1 := db.AutoMigrate(&User{}, &Group{}, &Message{}, &Relation{})
+	e1 := db.AutoMigrate(&TUser{}, &TGroup{}, &TMessage{}, &TRelation{})
 	if e1 != nil {
 		err := errors.Wrap(e1, "初始化表失败")
 		panic(err)
 	}
+	e2 := db.Exec("drop view v_group_message;")
+	if e2.Error != nil && !strings.Contains(e2.Error.Error(), "Unknown table") {
+		panic(e2)
+	}
+	e2 = db.Exec(vGroupMessage)
+	if e2.Error != nil {
+		panic(e2)
+	}
+	e3 := db.Exec("drop view v_friend_message;")
+	if e3.Error != nil && !strings.Contains(e3.Error.Error(), "Unknown table") {
+		panic(e3)
+	}
+	e3 = db.Exec(vFriendMessage)
+	if e3.Error != nil {
+		panic(e3)
+	}
 }
 
 func GetDb() *gorm.DB {
-	InitDb()
 	return db
 }
