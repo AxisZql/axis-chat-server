@@ -69,7 +69,7 @@ func PushUserInfo(userid int64, username string, friendId int64, op int) (err er
 	return
 }
 
-func PushGroupInfo(userid, groupId int64, onlineCount int, userList []db.User) (err error) {
+func PushGroupInfo(userid, groupId int64, onlineCount int, userList []db.TUser) (err error) {
 	msg := common.MsgSend{
 		Op: common.OpGroupInfoSend,
 		Msg: common.GroupInfoMsg{

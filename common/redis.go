@@ -47,13 +47,18 @@ const KafkaTopicOffset string = "axis:kafka_topic_offset:%s"
 // KafkaCommitTrigger  利用List实现简单的消息队列，每当connect支持消费一个消息时将该消息偏移量写入该消息队列
 const KafkaCommitTrigger string = "axis:kafka_commit_trigger:%s"
 
+// RedisLock redis distributed lock , 后缀是topic名称，每个topic持有一个分布式锁
+const RedisLock string = "axis:redis_lock:%s"
+
 type RedisClient struct {
 	Client map[string]*redis.Client
 }
 
 var (
 	once           sync.Once
-	redisClientMap *RedisClient
+	redisClientMap = &RedisClient{
+		Client: make(map[string]*redis.Client),
+	}
 	consistentHash *utils.HashBalance
 )
 
@@ -62,7 +67,6 @@ func InitRedis() {
 		// 虚拟节点设置为16个
 		consistentHash = utils.NewHashBalance(16, nil)
 		Conf := config.GetConfig()
-		redisClientMap.Client = make(map[string]*redis.Client)
 		hostList := strings.Split(Conf.Common.Redis.Address, ";")
 		for _, val := range hostList {
 			host, port, err := utils.ParseAddress(val)
@@ -100,7 +104,7 @@ func GetRedisClientByKey(key string) (*redis.Client, error) {
 	}
 	redisCli, ok := redisClientMap.Client[address]
 	if !ok {
-		return nil, errors.New("abnormal")
+		return nil, errors.New("abnormal can't get redis client")
 	}
 	return redisCli, nil
 }
@@ -225,20 +229,22 @@ func RedisDelString(key string) error {
 }
 
 // RedisIsNotExistHSet  只有当hash table没有对应filed才会进行设置
-func RedisIsNotExistHSet(key string, filed string, value interface{}) error {
+func RedisIsNotExistHSet(key string, filed string, value interface{}) (has bool, err error) {
+	// has 为true时表示之前存在，false表示之前不存在
 	client, err := GetRedisClientByKey(key)
 	if err != nil {
 		zlog.Error(err.Error())
-		return err
+		return false, err
 	}
 	if client.HGet(key, fmt.Sprintf(filed)).Val() == "" {
 		err = client.HSet(key, filed, value).Err()
 		if err != nil {
 			zlog.Error(err.Error())
-			return err
+			return false, err
 		}
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 func RedisHSet(key string, filed string, value interface{}) error {
@@ -297,18 +303,21 @@ func RedisHGet(key string, filed string) (string, error) {
 	return res, nil
 }
 
-func RedisHDel(key string, filed string) error {
+func RedisHDel(key string, filed string) (has bool, err error) {
 	client, err := GetRedisClientByKey(key)
 	if err != nil {
 		zlog.Error(err.Error())
-		return err
+		return false, err
 	}
-	err = client.HDel(key, filed).Err()
-	if err != nil {
-		zlog.Error(err.Error())
-		return err
+	if client.HGet(key, fmt.Sprintf(filed)).Val() != "" {
+		err = client.HDel(key, filed).Err()
+		if err != nil {
+			zlog.Error(err.Error())
+			return false, err
+		}
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func RedisInc(key string) error {

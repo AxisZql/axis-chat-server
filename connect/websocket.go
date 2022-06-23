@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-func (c *Connect) StartWebSocket(ws *WsServer) error {
+func (c *Connect) StartWebSocket(ws *WsServer) {
 	conf := config.GetConfig().ConnectRpc.ConnectWebsocket
 	http.HandleFunc("/ws", func(writer http.ResponseWriter, request *http.Request) {
 		upGrader := websocket.Upgrader{
@@ -31,5 +31,7 @@ func (c *Connect) StartWebSocket(ws *WsServer) error {
 		go ws.writePump(ch)
 	})
 	err := http.ListenAndServe(conf.Bind, nil)
-	return err
+	if err != nil {
+		panic(err)
+	}
 }

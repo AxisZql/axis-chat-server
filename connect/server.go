@@ -24,9 +24,9 @@ type wsServerOptions struct {
 }
 
 const (
-	defaultWriteWait       = 10 * time.Second
-	defaultPongWait        = 60 * time.Second
-	defaultPingPeriod      = 54 * time.Second
+	defaultWriteWait       = 120 * time.Second
+	defaultPongWait        = 120 * time.Second
+	defaultPingPeriod      = 30 * time.Second
 	defaultMaxMessageSize  = 512
 	defaultReadBufferSize  = 1024
 	defaultWriteBufferSize = 1024
@@ -46,6 +46,7 @@ func NewServer(buckets []*Bucket, op Operator, opts ...WsServerOption) (ws *WsSe
 	for _, o := range opts {
 		o.apply(&options)
 	}
+	ws = new(WsServer)
 	ws.Buckets = buckets
 	ws.bucketNum = uint32(len(buckets))
 	ws.Options = options

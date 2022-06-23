@@ -20,8 +20,8 @@ func (task *Task) Run() {
 	// 初始化connectRcp服务客户端
 	task.InitConnectRpcClient()
 	// 初始化消息kafka消息消费reader
-	task.UpdateOnlineObjTrigger() // 定时更新所有在线对象数据
-	go task.startTopic()          // 开始监听对应topic，并开始消息推送
+	go task.UpdateOnlineObjTrigger() // 定时更新所有在线对象数据
+	go task.startTopic()             // 开始监听对应topic，并开始消息推送
 
 	task.GoPush() // 开始向connect层进行消息推送
 }
