@@ -14,7 +14,7 @@ type LogicRpcInstance struct {
 
 var (
 	serDiscovery     *etcd.ServiceDiscovery
-	logicRpcInstance *LogicRpcInstance
+	logicRpcInstance = &LogicRpcInstance{}
 )
 
 // InitLogicClient 初始化获取logic层的rpc服务客户端

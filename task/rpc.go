@@ -5,11 +5,14 @@ import (
 	"axisChat/config"
 	"axisChat/etcd"
 	"axisChat/proto"
+	"axisChat/utils"
 	"axisChat/utils/zlog"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"strings"
+	"time"
 )
 
 type ConnectRpcInstance struct {
@@ -18,7 +21,7 @@ type ConnectRpcInstance struct {
 
 var (
 	serDiscovery       *etcd.ServiceDiscovery
-	connectRpcInstance *ConnectRpcInstance
+	connectRpcInstance = &ConnectRpcInstance{}
 )
 
 // InitConnectRpcClient 初始化获取logic层的rpc服务客户端
@@ -27,7 +30,7 @@ func (task *Task) InitConnectRpcClient() {
 	etcdAddrList := strings.Split(conf.Common.Etcd.Address, ";")
 	serDiscovery = etcd.NewServiceDiscovery(etcdAddrList)
 	//TODO：从etcd中 获取所有logic layer 的服务地址列表，并监听其改变
-	err := serDiscovery.WatchService(fmt.Sprintf("%s/%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathLogic))
+	err := serDiscovery.WatchService(fmt.Sprintf("%s/%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathConnect))
 	if err != nil {
 		panic(err)
 	}
@@ -46,12 +49,27 @@ func (task *Task) pushGroupInfoMsg(serverId string, msg *kafka.Message) {
 	payload.Msg = new(proto.PushGroupInfoMsgReq_Msg)
 	_ = json.Unmarshal(msg.Value, &payload)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushGroupInfoMsg(connectRpcInstance.ins.Ctx, &proto.PushGroupInfoMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	headers := make([]*proto.KafkaMsgInfo_Header, 0)
+	for _, val := range msg.Headers {
+		headers = append(headers, &proto.KafkaMsgInfo_Header{
+			Key:   val.Key,
+			Value: msg.Value,
+		})
+	}
+	_, err = connectClient.PushGroupInfoMsg(_ctx, &proto.PushGroupInfoMsgReq{
 		Msg: payload.Msg.(*proto.PushGroupInfoMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
-			Topic:     msg.Topic,
-			Partition: int32(msg.Partition),
-			Offset:    msg.Offset,
+			Topic:          msg.Topic,
+			Partition:      int32(msg.Partition),
+			Offset:         msg.Offset,
+			High_WaterMark: msg.HighWaterMark,
+			Key:            msg.Key,
+			Value:          msg.Value,
+			Headers:        headers,
+			Time:           msg.Time.Format(time.RFC3339),
 		},
 	})
 	if err != nil {
@@ -69,7 +87,9 @@ func (task *Task) pushGroupCountMsg(serverId string, msg *kafka.Message) {
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushGroupCountMsgReq_Msg)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushGroupCountMsg(connectRpcInstance.ins.Ctx, &proto.PushGroupCountMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = connectClient.PushGroupCountMsg(_ctx, &proto.PushGroupCountMsgReq{
 		Msg: payload.Msg.(*proto.PushGroupCountMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
 			Topic:     msg.Topic,
@@ -92,7 +112,9 @@ func (task *Task) pushFriendOnlineMsg(serverId string, msg *kafka.Message) {
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushFriendOnlineMsgReq_Msg)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushFriendOnlineMsg(connectRpcInstance.ins.Ctx, &proto.PushFriendOnlineMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = connectClient.PushFriendOnlineMsg(_ctx, &proto.PushFriendOnlineMsgReq{
 		Msg: payload.Msg.(*proto.PushFriendOnlineMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
 			Topic:     msg.Topic,
@@ -115,7 +137,9 @@ func (task *Task) pushFriendOfflineMsg(serverId string, msg *kafka.Message) {
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushFriendOfflineMsgReq_Msg)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushFriendOfflineMsg(connectRpcInstance.ins.Ctx, &proto.PushFriendOfflineMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = connectClient.PushFriendOfflineMsg(_ctx, &proto.PushFriendOfflineMsgReq{
 		Msg: payload.Msg.(*proto.PushFriendOfflineMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
 			Topic:     msg.Topic,
@@ -137,8 +161,15 @@ func (task *Task) pushGroupMsg(serverId string, msg *kafka.Message) {
 	}
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushGroupMsgReq_Msg)
+	_ = json.Unmarshal(msg.Value, &payload)
+
+	// todo 为保证消息持久化到db后到时序性，采用分布式系统中常用的snow flake ID的方法
+	payload.Msg.(*proto.PushGroupMsgReq_Msg).SnowId = utils.GetSnowflakeId()
+
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushGroupMsg(connectRpcInstance.ins.Ctx, &proto.PushGroupMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = connectClient.PushGroupMsg(_ctx, &proto.PushGroupMsgReq{
 		Msg: payload.Msg.(*proto.PushGroupMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
 			Topic:     msg.Topic,
@@ -160,8 +191,15 @@ func (task *Task) pushFriendMsg(serverId string, msg *kafka.Message) {
 	}
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushFriendMsgReq_Msg)
+	_ = json.Unmarshal(msg.Value, &payload)
+
+	// todo 为保证消息持久化到db后到时序性，采用分布式系统中常用的snow flake ID的方法
+	payload.Msg.(*proto.PushFriendMsgReq_Msg).SnowId = utils.GetSnowflakeId()
+
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
-	_, err = connectClient.PushFriendMsg(connectRpcInstance.ins.Ctx, &proto.PushFriendMsgReq{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = connectClient.PushFriendMsg(_ctx, &proto.PushFriendMsgReq{
 		Msg: payload.Msg.(*proto.PushFriendMsgReq_Msg),
 		KafkaInfo: &proto.KafkaMsgInfo{
 			Topic:     msg.Topic,

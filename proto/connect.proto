@@ -23,8 +23,16 @@ service ConnectLayer {
 // 推送过来的消息包括对应消息的topic名称，partition、offset（提交消息确认时offset+1）
 message kafkaMsgInfo{
   string topic = 1;
-  int32 partition = 2;
+  int32  partition = 2;
   int64 offset = 3;
+  int64 high_Water_mark = 4;
+  bytes key = 5;
+  bytes value = 6;
+  message Header {
+    string key = 1;
+    bytes value = 2;
+  } repeated Header headers = 7;
+  string time = 8;
 }
 
 
@@ -74,6 +82,7 @@ message PushGroupMsgReq {
     string from_username = 6;
     int64 create_at = 7;
     int32 op = 8;
+    string snow_id = 9;
   }Msg msg = 1;
   kafkaMsgInfo kafka_info = 2;
 }
@@ -88,6 +97,7 @@ message PushFriendMsgReq {
     string from_username = 6;
     int64 create_at = 7;
     int32 op = 8;
+    string snow_id = 9;
   }Msg msg = 1;
   kafkaMsgInfo kafka_info = 2;
 }

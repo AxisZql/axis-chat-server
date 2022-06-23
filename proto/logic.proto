@@ -76,14 +76,14 @@ message GetUserInfoByAccessTokenRequest{
 }
 
 message User {
-  int64 userid = 1;
+  int64 id = 1;
   string username = 2;
   string avatar = 3;
   int32 role = 4;
   int32 status = 5;
   string tag = 6;
-  int64 create_at = 7;
-  int64 update_at = 8;
+  string create_at = 7;
+  string update_at = 8;
 }
 
 message GetUserInfoByAccessTokenReply{
@@ -125,12 +125,12 @@ message SearchUserReply{
 }
 
 message Group {
-  int64 group_id = 1;
+  int64 id = 1;
   int64 userid = 2;
   string group_name = 3;
   string notice = 4;
-  int64  create_at = 5;
-  int64 update_at = 6;
+  string  create_at = 5;
+  string update_at = 6;
 }
 
 message SearchGroupRequest{
@@ -148,7 +148,7 @@ message ChatMessage {
   int64 friend_id = 4;
   string content = 5;
   string message_type = 6;
-  int64 create_at = 7;
+  string create_at = 7;
   string from_username = 8;
   string friend_name = 9;
   string group_name = 10;
@@ -156,7 +156,6 @@ message ChatMessage {
 
 message GetGroupMsgByPageRequest {
   int64 group_id = 1;
-  int64 userid = 2;
   int64 current = 3;
   int64 page_size = 4;
 }

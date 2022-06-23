@@ -28,6 +28,7 @@ type ServerLogic struct{}
 // 私聊的话将该用户的上线信息写入其好友的所有MQ中，如果是群聊的话，将该群的人数信息推送到群聊对应的MQ中
 // 用户上线利用消息队列主动提醒
 func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest) (reply *proto.ConnectReply, err error) {
+	reply = new(proto.ConnectReply)
 	sessionIdKey := fmt.Sprintf(common.SESSION, request.AccessToken)
 	res, err := common.RedisGetString(sessionIdKey)
 	if err != nil {
@@ -38,7 +39,7 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 		err = errors.New("不合法的access_token")
 		return
 	}
-	var user db.User
+	var user db.TUser
 	_ = json.Unmarshal(res, &user)
 	// TODO：通过serverId查找当前connect的用户在connect层的哪一个服务微服务中
 	serverIdKey := fmt.Sprintf(common.UseridMapServerId, user.ID)
@@ -48,10 +49,8 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 		return
 	}
 	// 在通知该用户加入的群聊、所有加好友，其的上线消息
-	var groupIdList []int64
-	var friendIdList []int64
-	db.QueryUserAllGroupId(user.ID, &groupIdList)
-	db.QueryUserAllFriendId(user.ID, &friendIdList)
+	groupIdList := db.QueryUserAllGroupId(user.ID)
+	friendIdList := db.QueryUserAllFriendId(user.ID)
 
 	// 更改对应用户的在线状态为在线
 	if err = common.RedisHSet(common.AllOnlineUser, fmt.Sprintf("%d", user.ID), "on"); err != nil {
@@ -61,22 +60,26 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 
 	// 更新该用户加入群聊的所有在redis中信息
 	for _, val := range groupIdList {
-		err := common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), user.Username)
+		var has bool
+		has, err = common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), user.Username)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
 		}
-		// 更新hash table中对应群聊项的在线人数
-		err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), 1)
-		if err != nil {
-			err = errors.New("系统异常")
-			return
+		// 之前不在线的用户上线时才更新群聊在线人数
+		if !has {
+			// 更新hash table中对应群聊项的在线人数
+			err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), 1)
+			if err != nil {
+				err = errors.New("系统异常")
+				return
+			}
 		}
 		//往群聊对应topic写入群聊在线人数更新信息 TODO:need to test
-		var userList []db.User
+		var userList []db.TUser
 		db.QueryGroupAllUser(val, &userList)
 		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
-		count, _ := strconv.Atoi(string(countStr))
+		count, _ := strconv.Atoi(countStr)
 		err = PushGroupInfo(user.ID, val, count, userList)
 		if err != nil {
 			err = errors.New("系统异常")
@@ -107,11 +110,11 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 // DisConnect 当connect层检测到对应客户端下线后，更新redis中该用户的在线信息，并在好友和其所在群聊的MQ中写入其下线的信息
 // 下也利用MQ主动提醒
 func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectRequest) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	// 在通知该用户加入的群聊、所有加好友，其的上线消息
-	var groupIdList []int64
-	var friendIdList []int64
-	db.QueryUserAllGroupId(request.Userid, &groupIdList)
-	db.QueryUserAllFriendId(request.Userid, &friendIdList)
+
+	groupIdList := db.QueryUserAllGroupId(request.Userid)
+	friendIdList := db.QueryUserAllFriendId(request.Userid)
 
 	// 更改对应用户的在线状态为下线,todo:不采取删除而是采取字段更改的原因是，删除对应field 频繁涉及空间的申请和释放
 	if err = common.RedisHSet(common.AllOnlineUser, fmt.Sprintf("%d", request.Userid), "off"); err != nil {
@@ -121,18 +124,21 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 
 	// 更新该用户加入群聊的所有在redis中信息
 	for _, val := range groupIdList {
-		err := common.RedisHDel(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", request.Userid))
+		var has bool
+		has, err = common.RedisHDel(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", request.Userid))
 		if err != nil {
 			err = errors.New("系统异常")
 			return
 		}
-		err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), -1)
-		if err != nil {
-			err = errors.New("系统异常")
-			return
+		if has {
+			err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", val), -1)
+			if err != nil {
+				err = errors.New("系统异常")
+				return
+			}
 		}
 		//往群聊对应topic写入群聊在线人数更新信息 TODO:need to test
-		var userList []db.User
+		var userList []db.TUser
 		db.QueryGroupAllUser(val, &userList)
 		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
 		count, _ := strconv.Atoi(countStr)
@@ -156,8 +162,9 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 }
 
 func (s *ServerLogic) Register(ctx context.Context, request *proto.RegisterRequest) (reply *proto.RegisterReply, err error) {
+	reply = new(proto.RegisterReply)
 	reply.Code = config.FailReplyCode
-	user := new(db.User)
+	user := new(db.TUser)
 	db.QueryUserByUserName(request.Username, user)
 	if user.ID > 0 {
 		err = errors.New("当前用户已经存在，请直接登陆")
@@ -191,8 +198,9 @@ func (s *ServerLogic) Register(ctx context.Context, request *proto.RegisterReque
 }
 
 func (s *ServerLogic) Login(ctx context.Context, request *proto.LoginRequest) (reply *proto.LoginReply, err error) {
+	reply = new(proto.LoginReply)
 	reply.Code = config.FailReplyCode
-	user := new(db.User)
+	user := new(db.TUser)
 	db.QueryUserByUserName(request.Username, user)
 	if user.ID == 0 {
 		err = errors.New("不存在该用户名")
@@ -215,7 +223,7 @@ func (s *ServerLogic) Login(ctx context.Context, request *proto.LoginRequest) (r
 	}
 	if string(token) != "" {
 		oldSessionIdKey := fmt.Sprintf(common.SESSION, string(token))
-		err := common.RedisDelString(oldSessionIdKey)
+		err = common.RedisDelString(oldSessionIdKey)
 		if err != nil {
 			err = errors.New(fmt.Sprintf("登出用户失败！access_token=%s", string(token)))
 			return
@@ -238,6 +246,7 @@ func (s *ServerLogic) Login(ctx context.Context, request *proto.LoginRequest) (r
 }
 
 func (s *ServerLogic) LoginOut(ctx context.Context, request *proto.LoginOutRequest) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	accessToken := request.AccessToken
 	sessionIdKey := fmt.Sprintf(common.SESSION, accessToken)
 	res, err := common.RedisGetString(sessionIdKey)
@@ -245,7 +254,7 @@ func (s *ServerLogic) LoginOut(ctx context.Context, request *proto.LoginOutReque
 		err = errors.New("系统异常")
 		return
 	}
-	var user db.User
+	var user db.TUser
 	_ = json.Unmarshal(res, &user)
 	if user.ID == 0 {
 		err = errors.New(fmt.Sprintf("获取该用户的信息失败，access_token=%s", accessToken))
@@ -265,6 +274,7 @@ func (s *ServerLogic) LoginOut(ctx context.Context, request *proto.LoginOutReque
 }
 
 func (s *ServerLogic) GetUserInfoByAccessToken(ctx context.Context, request *proto.GetUserInfoByAccessTokenRequest) (reply *proto.GetUserInfoByAccessTokenReply, err error) {
+	reply = new(proto.GetUserInfoByAccessTokenReply)
 	reply.Code = config.FailReplyCode
 	sessionIdKey := fmt.Sprintf(common.SESSION, request.AccessToken)
 	res, err := common.RedisGetString(sessionIdKey)
@@ -276,37 +286,42 @@ func (s *ServerLogic) GetUserInfoByAccessToken(ctx context.Context, request *pro
 		err = errors.New("不合法的access_token")
 		return
 	}
-	_ = json.Unmarshal(res, &reply.User)
+	err = json.Unmarshal(res, &reply.User)
+	if err != nil {
+		zlog.Error(err.Error())
+	}
 	reply.Code = config.SuccessReplyCode
 	return reply, nil
 }
 
 func (s *ServerLogic) GetUserInfoByUserid(ctx context.Context, request *proto.GetUserInfoByUseridRequest) (reply *proto.GetUserInfoByUseridReply, err error) {
+	reply = new(proto.GetUserInfoByUseridReply)
 	reply.Code = config.FailReplyCode
-	var user db.User
+	var user db.TUser
 	db.QueryUserById(request.Userid, &user)
 	if user.ID == 0 {
 		err = errors.New("不存在该用户")
 		return
 	}
 	reply.User = &proto.User{
-		Userid:   user.ID,
+		Id:       user.ID,
 		Username: user.Username,
 		Avatar:   user.Avatar,
 		Role:     int32(user.Role),
 		Status:   int32(user.Status),
 		Tag:      user.Tag,
-		CreateAt: user.CreateAt.Unix(),
-		UpdateAt: user.UpdateAt.Unix(),
+		CreateAt: user.CreateAt.Format(time.RFC3339),
+		UpdateAt: user.UpdateAt.Format(time.RFC3339),
 	}
 	reply.Code = config.SuccessReplyCode
 	return reply, nil
 }
 
 func (s *ServerLogic) UpdateUserInfo(ctx context.Context, request *proto.UpdateUserInfoRequest) (reply *proto.UpdateUserInfoReply, err error) {
+	reply = new(proto.UpdateUserInfoReply)
 	reply.Code = config.FailReplyCode
-	user := &db.User{
-		ID:       request.User.Userid,
+	user := &db.TUser{
+		ID:       request.User.Id,
 		Username: request.User.Username,
 		Avatar:   request.User.Avatar,
 		Role:     int(request.User.Role),
@@ -319,21 +334,22 @@ func (s *ServerLogic) UpdateUserInfo(ctx context.Context, request *proto.UpdateU
 		return
 	}
 	reply.User = &proto.User{
-		Userid:   user.ID,
+		Id:       user.ID,
 		Username: user.Username,
 		Avatar:   user.Avatar,
 		Role:     int32(user.Role),
 		Status:   int32(user.Status),
 		Tag:      user.Tag,
-		CreateAt: user.CreateAt.Unix(),
-		UpdateAt: user.UpdateAt.Unix(),
+		CreateAt: user.CreateAt.Format(time.RFC3339),
+		UpdateAt: user.UpdateAt.Format(time.RFC3339),
 	}
 	reply.Code = config.SuccessReplyCode
 	return reply, nil
 }
 
 func (s *ServerLogic) UpdatePassword(ctx context.Context, request *proto.UpdatePasswordRequest) (reply *empty.Empty, err error) {
-	var user db.User
+	reply = new(empty.Empty)
+	var user db.TUser
 	if request.NewPassword2 != request.NewPassword1 {
 		err = errors.New("输入的新密码不一致")
 		return
@@ -361,101 +377,106 @@ func (s *ServerLogic) UpdatePassword(ctx context.Context, request *proto.UpdateP
 }
 
 func (s *ServerLogic) SearchUser(ctx context.Context, request *proto.SearchUserRequest) (reply *proto.SearchUserReply, err error) {
-	var userList []db.User
+	reply = new(proto.SearchUserReply)
+	var userList []db.TUser
 	db.SearchUserByUsername(request.Username, &userList)
 	for _, val := range userList {
 		reply.UserList = append(reply.UserList, &proto.User{
-			Userid:   val.ID,
+			Id:       val.ID,
 			Username: val.Username,
 			Avatar:   val.Avatar,
 			Role:     int32(val.Role),
 			Status:   int32(val.Status),
 			Tag:      val.Tag,
-			CreateAt: val.CreateAt.Unix(),
-			UpdateAt: val.UpdateAt.Unix(),
+			CreateAt: val.CreateAt.Format(time.RFC3339),
+			UpdateAt: val.UpdateAt.Format(time.RFC3339),
 		})
 	}
 	return
 }
 
 func (s *ServerLogic) SearchGroup(ctx context.Context, request *proto.SearchGroupRequest) (reply *proto.SearchGroupReply, err error) {
-	var groupList []db.Group
+	reply = new(proto.SearchGroupReply)
+	var groupList []db.TGroup
 	db.SearchGroupByGroupName(request.GroupName, &groupList)
 	for _, val := range groupList {
 		reply.GroupList = append(reply.GroupList, &proto.Group{
-			GroupId:   val.ID,
+			Id:        val.ID,
 			Userid:    val.ID,
 			GroupName: val.GroupName,
 			Notice:    val.Notice,
-			CreateAt:  val.CreateAt.Unix(),
-			UpdateAt:  val.UpdateAt.Unix(),
+			CreateAt:  val.CreateAt.Format(time.RFC3339),
+			UpdateAt:  val.UpdateAt.Format(time.RFC3339),
 		})
 	}
 	return
 }
 
 func (s *ServerLogic) GetGroupMsgByPage(ctx context.Context, request *proto.GetGroupMsgByPageRequest) (reply *proto.GetGroupMsgByPageReply, err error) {
-	var msgList *[]db.Message
-	var userList *[]db.User
+	reply = new(proto.GetGroupMsgByPageReply)
+	var msgList []db.VGroupMessage
+	var userList []db.TUser
 	reply.Code = config.FailReplyCode
-	db.QueryGroupMessageByPage(request.Userid, request.GroupId, msgList, int(request.Current), int(request.PageSize))
-	db.QueryGroupAllUser(request.GroupId, userList)
+	db.QueryGroupMessageByPage(request.GroupId, &msgList, int(request.Current), int(request.PageSize))
+	db.QueryGroupAllUser(request.GroupId, &userList)
 	reply.Code = config.SuccessReplyCode
-	for _, val := range *msgList {
+	for _, val := range msgList {
 		reply.MessageArr = append(reply.MessageArr, &proto.ChatMessage{
-			Id:          val.ID,
-			Userid:      val.FromA,
-			GroupId:     val.ToB,
-			Content:     val.Content,
-			MessageType: val.MessageType,
-			CreateAt:    val.CreateAt.Unix(),
-			FriendName:  "", //TODO:need create a views
-			GroupName:   "",
+			Id:           val.ID,
+			Userid:       val.Userid,
+			GroupId:      val.GroupId,
+			Content:      val.Content,
+			MessageType:  val.MessageType,
+			CreateAt:     val.CreateAt.Format(time.RFC3339),
+			FromUsername: val.FromUsername,
+			GroupName:    val.GroupName,
 		})
 	}
-	for _, val := range *userList {
+	for _, val := range userList {
 		reply.UserArr = append(reply.UserArr, &proto.User{
-			Userid:   val.ID,
+			Id:       val.ID,
 			Username: val.Username,
 			Avatar:   val.Avatar,
 			Role:     int32(val.Role),
 			Status:   int32(val.Status),
 			Tag:      val.Tag,
-			CreateAt: val.CreateAt.Unix(),
-			UpdateAt: val.UpdateAt.Unix(),
+			CreateAt: val.CreateAt.Format(time.RFC3339),
+			UpdateAt: val.UpdateAt.Format(time.RFC3339),
 		})
 	}
 	return
 }
 
 func (s *ServerLogic) GetFriendMsgByPage(ctx context.Context, request *proto.GetFriendMsgByPageRequest) (reply *proto.GetFriendMsgByPageReply, err error) {
-	var msgList *[]db.Message
+	reply = new(proto.GetFriendMsgByPageReply)
+	var msgList []db.VFriendMessage
 	reply.Code = config.FailReplyCode
-	db.QueryFriendMessageByPage(request.Userid, request.FriendId, msgList, int(request.Current), int(request.PageSize))
+	db.QueryFriendMessageByPage(request.Userid, request.FriendId, &msgList, int(request.Current), int(request.PageSize))
 	reply.Code = config.SuccessReplyCode
-	for _, val := range *msgList {
+	for _, val := range msgList {
 		reply.MessageArr = append(reply.MessageArr, &proto.ChatMessage{
-			Id:          val.ID,
-			Userid:      val.FromA,
-			GroupId:     val.ToB,
-			Content:     val.Content,
-			MessageType: val.MessageType,
-			CreateAt:    val.CreateAt.Unix(),
-			FriendName:  "", //TODO:need create a views
-			GroupName:   "",
+			Id:           val.ID,
+			Userid:       val.Userid,
+			FriendId:     val.FriendId,
+			Content:      val.Content,
+			MessageType:  val.MessageType,
+			CreateAt:     val.CreateAt.Format(time.RFC3339),
+			FriendName:   val.FriendName,
+			FromUsername: val.FromUsername,
 		})
 	}
 	return
 }
 
 func (s *ServerLogic) CreateGroup(ctx context.Context, request *proto.Group) (reply *proto.Group, err error) {
-	var oldGroup db.Group
+	reply = new(proto.Group)
+	var oldGroup db.TGroup
 	db.QueryGroupByGroupName(request.GroupName, &oldGroup)
 	if oldGroup.ID != 0 {
 		err = errors.New("该群聊名称已经被使用")
 		return
 	}
-	newGroup := &db.Group{
+	newGroup := &db.TGroup{
 		Userid:    request.Userid,
 		GroupName: request.GroupName,
 		Notice:    request.GroupName,
@@ -466,17 +487,18 @@ func (s *ServerLogic) CreateGroup(ctx context.Context, request *proto.Group) (re
 		return
 	}
 	return &proto.Group{
-		GroupId:   newGroup.ID,
+		Id:        newGroup.ID,
 		Userid:    newGroup.Userid,
 		GroupName: newGroup.GroupName,
 		Notice:    newGroup.Notice,
-		CreateAt:  newGroup.CreateAt.Unix(),
-		UpdateAt:  newGroup.UpdateAt.Unix(),
+		CreateAt:  newGroup.CreateAt.Format(time.RFC3339),
+		UpdateAt:  newGroup.UpdateAt.Format(time.RFC3339),
 	}, nil
 }
 
 func (s *ServerLogic) AddGroup(ctx context.Context, request *proto.AddGroupRequest) (reply *empty.Empty, err error) {
-	relation := &db.Relation{
+	reply = new(empty.Empty)
+	relation := &db.TRelation{
 		Type:    "group",
 		ObjectA: request.Userid,
 		ObjectB: request.GroupId,
@@ -490,8 +512,9 @@ func (s *ServerLogic) AddGroup(ctx context.Context, request *proto.AddGroupReque
 }
 
 func (s *ServerLogic) AddFriend(ctx context.Context, request *proto.AddFriendRequest) (reply *empty.Empty, err error) {
-	relation := &db.Relation{
-		Type:    "group",
+	reply = new(empty.Empty)
+	relation := &db.TRelation{
+		Type:    "friend",
 		ObjectA: request.Userid,
 		ObjectB: request.FriendId,
 	}
@@ -504,6 +527,7 @@ func (s *ServerLogic) AddFriend(ctx context.Context, request *proto.AddFriendReq
 }
 
 func (s *ServerLogic) Push(ctx context.Context, request *proto.PushRequest) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	payload := common.FriendMsg{
 		Userid:       request.Msg.Userid,
 		FriendId:     request.Msg.FriendId,
@@ -523,6 +547,7 @@ func (s *ServerLogic) Push(ctx context.Context, request *proto.PushRequest) (rep
 }
 
 func (s *ServerLogic) PushRoom(ctx context.Context, request *proto.PushRoomRequest) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	payload := common.GroupMsg{
 		Userid:       request.Msg.Userid,
 		GroupId:      request.Msg.GroupId,
@@ -542,6 +567,7 @@ func (s *ServerLogic) PushRoom(ctx context.Context, request *proto.PushRoomReque
 }
 
 func (s *ServerLogic) PushRoomCount(ctx context.Context, request *proto.PushRoomCountRequest) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
 	count, _ := strconv.Atoi(countStr)
 	// TODO:往该群聊的的topic中生产消息
@@ -554,7 +580,8 @@ func (s *ServerLogic) PushRoomCount(ctx context.Context, request *proto.PushRoom
 }
 
 func (s *ServerLogic) PushRoomInfo(ctx context.Context, request *proto.PushRoomInfoRequest) (reply *empty.Empty, err error) {
-	var userList []db.User
+	reply = new(empty.Empty)
+	var userList []db.TUser
 	db.QueryGroupAllUser(request.GroupId, &userList)
 	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
 	count, _ := strconv.Atoi(countStr)

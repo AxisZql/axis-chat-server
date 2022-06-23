@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/segmentio/kafka-go"
 	"strings"
+	"time"
 )
 
 type LogicRpcInstance struct {
@@ -21,7 +22,7 @@ type LogicRpcInstance struct {
 
 var (
 	serDiscovery     *etcd.ServiceDiscovery
-	logicRpcInstance *LogicRpcInstance
+	logicRpcInstance = &LogicRpcInstance{}
 )
 
 // InitLogicClient 初始化获取logic层的rpc服务客户端
@@ -46,17 +47,32 @@ func (c *Connect) InitLogicClient() {
 type ServerConnect struct{}
 
 func (sc *ServerConnect) PushGroupInfoMsg(ctx context.Context, req *proto.PushGroupInfoMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	if req == nil {
 		err = errors.New("req *proto.PushGroupInfoMsgReq == nil")
 		zlog.Error(err.Error())
 		return
 	}
+
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 遍历bucket推送群聊消息，因为同一个群的成员可以分散在不同的bucket中，故不同bucket中可能有同一个groupNode
 	for _, bucket := range DefaultServer.Buckets {
@@ -66,17 +82,31 @@ func (sc *ServerConnect) PushGroupInfoMsg(ctx context.Context, req *proto.PushGr
 }
 
 func (sc *ServerConnect) PushGroupCountMsg(ctx context.Context, req *proto.PushGroupCountMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	if req == nil {
 		err = errors.New("req *proto.PushGroupCountMsgReq == nil")
 		zlog.Error(err.Error())
 		return
 	}
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 遍历bucket推送群聊消息，因为同一个群的成员可以分散在不同的bucket中，故不同bucket中可能有同一个groupNode
 	for _, bucket := range DefaultServer.Buckets {
@@ -85,18 +115,32 @@ func (sc *ServerConnect) PushGroupCountMsg(ctx context.Context, req *proto.PushG
 	return
 }
 func (sc *ServerConnect) PushFriendOnlineMsg(ctx context.Context, req *proto.PushFriendOnlineMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	// TODO:因为参数不一样所以分开写
 	if req == nil {
 		err = errors.New("req *proto.PushFriendOnlineMsgReq == nil")
 		zlog.Error(err.Error())
 		return
 	}
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
 	bucket := DefaultServer.Bucket(req.Msg.FriendId)
@@ -111,17 +155,31 @@ func (sc *ServerConnect) PushFriendOnlineMsg(ctx context.Context, req *proto.Pus
 }
 
 func (sc *ServerConnect) PushFriendOfflineMsg(ctx context.Context, req *proto.PushFriendOfflineMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	if req == nil {
 		err = errors.New("req *proto.PushFriendOfflineMsgReq == nil")
 		zlog.Error(err.Error())
 		return
 	}
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
 	bucket := DefaultServer.Bucket(req.Msg.FriendId)
@@ -136,17 +194,31 @@ func (sc *ServerConnect) PushFriendOfflineMsg(ctx context.Context, req *proto.Pu
 }
 
 func (sc *ServerConnect) PushGroupMsg(ctx context.Context, req *proto.PushGroupMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	if req == nil {
 		err = errors.New("req *proto.PushGroupMsgReq == nil")
 		zlog.Error(err.Error())
 		return
 	}
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 遍历bucket推送群聊消息，因为同一个群的成员可以分散在不同的bucket中，故不同bucket中可能有同一个groupNode
 	for _, bucket := range DefaultServer.Buckets {
@@ -156,16 +228,30 @@ func (sc *ServerConnect) PushGroupMsg(ctx context.Context, req *proto.PushGroupM
 }
 
 func (sc *ServerConnect) PushFriendMsg(ctx context.Context, req *proto.PushFriendMsgReq) (reply *empty.Empty, err error) {
+	reply = new(empty.Empty)
 	if req == nil {
 		zlog.Error("req *proto.PushFriendMsgReq == nil")
 		return
 	}
+	header := make([]kafka.Header, 0)
+	for _, val := range req.KafkaInfo.Headers {
+		header = append(header, kafka.Header{
+			Key:   val.Key,
+			Value: val.Value,
+		})
+	}
+
 	msgBody, _ := json.Marshal(req.Msg)
+	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
 	kafkaMsg := kafka.Message{
-		Topic:     req.KafkaInfo.Topic,
-		Partition: int(req.KafkaInfo.Partition),
-		Offset:    req.KafkaInfo.Offset,
-		Value:     msgBody,
+		Topic:         req.KafkaInfo.Topic,
+		Partition:     int(req.KafkaInfo.Partition),
+		Offset:        req.KafkaInfo.Offset,
+		HighWaterMark: req.KafkaInfo.High_WaterMark,
+		Key:           req.KafkaInfo.Key,
+		Value:         msgBody,
+		Headers:       header,
+		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
 	bucket := DefaultServer.Bucket(req.Msg.FriendId)
