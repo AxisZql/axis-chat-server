@@ -5,17 +5,17 @@ import (
 	"axisChat/api/utils"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"time"
 )
 
 type pushReq struct {
-	Userid       int64  `json:"userid" binding:"required"`
 	FriendId     int64  `json:"friendId" binding:"required"`
 	Content      string `json:"content" binding:"required"`
 	MessageType  string `json:"messageType" binding:"required"`
-	FromUserName string `json:"fromUserName" binding:"required"`
+	FromUsername string `json:"fromUsername" binding:"required"`
 	FriendName   string `json:"friendName" binding:"required"`
 }
 
@@ -26,19 +26,26 @@ func Push(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.Push(ins.Ctx, &proto.PushRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.Push(_ctx, &proto.PushRequest{
 		Msg: &proto.ChatMessage{
-			Userid:       form.Userid,
+			Userid:       userid.(int64),
 			FriendId:     form.FriendId,
 			Content:      form.Content,
 			MessageType:  form.MessageType,
-			FromUsername: form.FromUserName,
+			FromUsername: form.FromUsername,
 			FriendName:   form.FriendName,
 		},
 	})
@@ -51,11 +58,10 @@ func Push(ctx *gin.Context) {
 }
 
 type pushRoomReq struct {
-	Userid       int64  `json:"userid" binding:"required"`
 	GroupId      int64  `json:"groupId" binding:"required"`
 	Content      string `json:"content" binding:"required"`
 	MessageType  string `json:"messageType" binding:"required"`
-	FromUserName string `json:"fromUserName" binding:"required"`
+	FromUsername string `json:"fromUsername" binding:"required"`
 	GroupName    string `json:"groupName" binding:"required"`
 }
 
@@ -66,21 +72,28 @@ func PushRoom(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.PushRoom(ins.Ctx, &proto.PushRoomRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.PushRoom(_ctx, &proto.PushRoomRequest{
 		Msg: &proto.ChatMessage{
-			Userid:       form.Userid,
+			Userid:       userid.(int64),
 			GroupId:      form.GroupId,
 			Content:      form.Content,
 			MessageType:  form.MessageType,
-			FromUsername: form.FromUserName,
+			FromUsername: form.FromUsername,
 			GroupName:    form.GroupName,
-			CreateAt:     time.Now().Unix(),
+			CreateAt:     time.Now().Format(time.RFC3339),
 		},
 	})
 	if err != nil {
@@ -108,7 +121,9 @@ func PushRoomCount(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.PushRoomCount(ins.Ctx, &proto.PushRoomCountRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.PushRoomCount(_ctx, &proto.PushRoomCountRequest{
 		GroupId: form.GroupId,
 	})
 	if err != nil {
@@ -136,7 +151,9 @@ func PushRoomInfo(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.PushRoomInfo(ins.Ctx, &proto.PushRoomInfoRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.PushRoomInfo(_ctx, &proto.PushRoomInfoRequest{
 		GroupId: form.GroupId,
 	})
 	if err != nil {

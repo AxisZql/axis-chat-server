@@ -5,8 +5,10 @@ import (
 	"axisChat/api/utils"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"time"
 )
 
 type searchGroupReq struct {
@@ -26,7 +28,9 @@ func SearchGroup(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.SearchGroup(ins.Ctx, &proto.SearchGroupRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.SearchGroup(_ctx, &proto.SearchGroupRequest{
 		GroupName: form.GroupName,
 	})
 	if err != nil {
@@ -39,7 +43,6 @@ func SearchGroup(ctx *gin.Context) {
 
 type getGroupMsgByPageReq struct {
 	GroupId  int64 `json:"groupId" binding:"required"`
-	Userid   int64 `json:"userid" binding:"required"`
 	Current  int64 `json:"current" binding:"required"`
 	PageSize int64 `json:"pageSize" binding:"required"`
 }
@@ -57,9 +60,10 @@ func GetGroupMsgByPage(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.GetGroupMsgByPage(ins.Ctx, &proto.GetGroupMsgByPageRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.GetGroupMsgByPage(_ctx, &proto.GetGroupMsgByPageRequest{
 		GroupId:  form.GroupId,
-		Userid:   form.Userid,
 		Current:  form.Current,
 		PageSize: form.PageSize,
 	})
@@ -72,7 +76,6 @@ func GetGroupMsgByPage(ctx *gin.Context) {
 }
 
 type createGroupReq struct {
-	Userid    int64  `json:"userid" binding:"required"`
 	GroupName string `json:"groupName" binding:"required"`
 	Notice    string `json:"notice" binding:"required"`
 }
@@ -84,14 +87,21 @@ func CreateGroup(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.CreateGroup(ins.Ctx, &proto.Group{
-		Userid:    form.Userid,
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.CreateGroup(_ctx, &proto.Group{
+		Userid:    userid.(int64),
 		GroupName: form.GroupName,
 		Notice:    form.Notice,
 	})
@@ -104,7 +114,6 @@ func CreateGroup(ctx *gin.Context) {
 }
 
 type addGroup struct {
-	Userid  int64 `json:"userid" binding:"required"`
 	GroupId int64 `json:"groupId" binding:"required"`
 }
 
@@ -115,15 +124,22 @@ func AddGroup(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.AddGroup(ins.Ctx, &proto.AddGroupRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.AddGroup(_ctx, &proto.AddGroupRequest{
 		GroupId: form.GroupId,
-		Userid:  form.Userid,
+		Userid:  userid.(int64),
 	})
 	if err != nil {
 		zlog.Error(err.Error())

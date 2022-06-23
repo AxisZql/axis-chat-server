@@ -4,9 +4,11 @@ import (
 	"axisChat/api/rpc"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"net/http"
+	"time"
 )
 
 /*
@@ -50,7 +52,9 @@ func CheckSession() gin.HandlerFunc {
 			return
 		}
 		client := proto.NewLogicClient(ins.Conn)
-		_, err = client.GetUserInfoByAccessToken(ins.Ctx, &proto.GetUserInfoByAccessTokenRequest{
+		_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+		reply, err := client.GetUserInfoByAccessToken(_ctx, &proto.GetUserInfoByAccessTokenRequest{
 			AccessToken: form.AccessToken,
 		})
 		if err != nil {
@@ -59,6 +63,8 @@ func CheckSession() gin.HandlerFunc {
 			ResponseWithCode(ctx, CodeSessionError, nil, nil)
 			return
 		}
+		ctx.Set("userid", reply.User.Id)
+		ctx.Set("role", reply.User.Role)
 		ctx.Next()
 		return
 	}

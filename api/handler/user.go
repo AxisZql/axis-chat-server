@@ -6,6 +6,7 @@ import (
 	"axisChat/db"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"time"
@@ -29,7 +30,9 @@ func Register(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.Register(ins.Ctx, &proto.RegisterRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.Register(_ctx, &proto.RegisterRequest{
 		Username: form.Username,
 		Password: form.Password,
 	})
@@ -59,7 +62,9 @@ func Login(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.Login(ins.Ctx, &proto.LoginRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.Login(_ctx, &proto.LoginRequest{
 		Username: form.Username,
 		Password: form.Password,
 	})
@@ -72,7 +77,7 @@ func Login(ctx *gin.Context) {
 }
 
 type loginOutReq struct {
-	AccessToken string `json:"access_token" binding:"required"`
+	AccessToken string `json:"accessToken" binding:"required"`
 }
 
 func LoginOut(ctx *gin.Context) {
@@ -88,7 +93,9 @@ func LoginOut(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.LoginOut(ins.Ctx, &proto.LoginOutRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.LoginOut(_ctx, &proto.LoginOutRequest{
 		AccessToken: form.AccessToken,
 	})
 	if err != nil {
@@ -100,7 +107,7 @@ func LoginOut(ctx *gin.Context) {
 }
 
 type getUserInfoByAccessTokenReq struct {
-	AccessToken string `json:"access_token" binding:"required"`
+	AccessToken string `json:"accessToken" binding:"required"`
 }
 
 func GetUserInfoByAccessToken(ctx *gin.Context) {
@@ -116,7 +123,9 @@ func GetUserInfoByAccessToken(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.GetUserInfoByAccessToken(ins.Ctx, &proto.GetUserInfoByAccessTokenRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.GetUserInfoByAccessToken(_ctx, &proto.GetUserInfoByAccessTokenRequest{
 		AccessToken: form.AccessToken,
 	})
 	if err != nil {
@@ -124,14 +133,15 @@ func GetUserInfoByAccessToken(ctx *gin.Context) {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
-	data := db.User{
-		ID:       reply.User.Userid,
+	createAt, _ := time.ParseInLocation(time.RFC3339, reply.User.CreateAt, time.Local)
+	data := db.TUser{
+		ID:       reply.User.Id,
 		Username: reply.User.Username,
 		Avatar:   reply.User.Avatar,
 		Role:     int(reply.User.Role),
 		Status:   int(reply.User.Status),
 		Tag:      reply.User.Tag,
-		CreateAt: time.UnixMilli(reply.User.CreateAt).Local(),
+		CreateAt: createAt,
 	}
 	utils.SuccessWithMsg(ctx, nil, data)
 }
@@ -153,7 +163,9 @@ func GetUserInfoByUserid(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.GetUserInfoByUserid(ins.Ctx, &proto.GetUserInfoByUseridRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.GetUserInfoByUserid(_ctx, &proto.GetUserInfoByUseridRequest{
 		Userid: form.Userid,
 	})
 	if err != nil {
@@ -161,25 +173,25 @@ func GetUserInfoByUserid(ctx *gin.Context) {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
-	data := db.User{
-		ID:       reply.User.Userid,
+	createAt, _ := time.ParseInLocation(time.RFC3339, reply.User.CreateAt, time.Local)
+	data := db.TUser{
+		ID:       reply.User.Id,
 		Username: reply.User.Username,
 		Avatar:   reply.User.Avatar,
 		Role:     int(reply.User.Role),
 		Status:   int(reply.User.Status),
 		Tag:      reply.User.Tag,
-		CreateAt: time.UnixMilli(reply.User.CreateAt).Local(),
+		CreateAt: createAt,
 	}
 	utils.SuccessWithMsg(ctx, nil, data)
 }
 
 type updateUserInfo struct {
-	Userid   int64  `json:"userid" binding:"required"`
-	Username string `json:"username" binding:"required"`
-	Avatar   string `json:"avatar" binding:"required"`
-	Role     int    `json:"role" binding:"required"`
-	Status   int    `json:"status" binding:"required"`
-	Tag      string `json:"tag" binding:"required"`
+	Username string `json:"username" `
+	Avatar   string `json:"avatar"`
+	Role     int    `json:"role"`
+	Status   int    `json:"status"`
+	Tag      string `json:"tag"`
 }
 
 func UpdateUserInfo(ctx *gin.Context) {
@@ -189,15 +201,22 @@ func UpdateUserInfo(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.UpdateUserInfo(ins.Ctx, &proto.UpdateUserInfoRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.UpdateUserInfo(_ctx, &proto.UpdateUserInfoRequest{
 		User: &proto.User{
-			Userid:   form.Userid,
+			Id:       userid.(int64),
 			Username: form.Username,
 			Avatar:   form.Avatar,
 			Role:     int32(form.Role),
@@ -210,20 +229,22 @@ func UpdateUserInfo(ctx *gin.Context) {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
-	data := db.User{
-		ID:       reply.User.Userid,
+	createAt, _ := time.ParseInLocation(time.RFC3339, reply.User.CreateAt, time.Local)
+	updateAt, _ := time.ParseInLocation(time.RFC3339, reply.User.UpdateAt, time.Local)
+	data := db.TUser{
+		ID:       reply.User.Id,
 		Username: reply.User.Username,
 		Avatar:   reply.User.Avatar,
 		Role:     int(reply.User.Role),
 		Status:   int(reply.User.Status),
 		Tag:      reply.User.Tag,
-		CreateAt: time.UnixMilli(reply.User.CreateAt).Local(),
+		CreateAt: createAt,
+		UpdateAt: updateAt,
 	}
 	utils.SuccessWithMsg(ctx, nil, data)
 }
 
 type updatePasswordReq struct {
-	Userid       int64  `json:"userid" binding:"required"`
 	OldPassword  string `json:"oldPassword" binding:"required"`
 	NewPassword1 string `json:"newPassword1" binding:"required"`
 	NewPassword2 string `json:"newPassword2" binding:"required"`
@@ -236,14 +257,21 @@ func UpdatePassword(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.UpdatePassword(ins.Ctx, &proto.UpdatePasswordRequest{
-		Userid:       form.Userid,
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.UpdatePassword(_ctx, &proto.UpdatePasswordRequest{
+		Userid:       userid.(int64),
 		OldPassword:  form.OldPassword,
 		NewPassword1: form.NewPassword1,
 		NewPassword2: form.NewPassword2,
@@ -273,7 +301,9 @@ func SearchUser(ctx *gin.Context) {
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.SearchUser(ins.Ctx, &proto.SearchUserRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.SearchUser(_ctx, &proto.SearchUserRequest{
 		Username: form.Username,
 	})
 	if err != nil {
@@ -286,7 +316,6 @@ func SearchUser(ctx *gin.Context) {
 
 type getFriendMsgByPageReq struct {
 	FriendId int64 `json:"friendId" binding:"required"`
-	Userid   int64 `json:"userid" binding:"required"`
 	Current  int64 `json:"current" binding:"required"`
 	PageSize int64 `json:"pageSize" binding:"required"`
 }
@@ -298,15 +327,22 @@ func GetFriendMsgByPage(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	reply, err := client.GetFriendMsgByPage(ins.Ctx, &proto.GetFriendMsgByPageRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.GetFriendMsgByPage(_ctx, &proto.GetFriendMsgByPageRequest{
 		FriendId: form.FriendId,
-		Userid:   form.Userid,
+		Userid:   userid.(int64),
 		Current:  form.Current,
 		PageSize: form.PageSize,
 	})
@@ -319,7 +355,6 @@ func GetFriendMsgByPage(ctx *gin.Context) {
 }
 
 type addFriend struct {
-	Userid   int64 `json:"userid" binding:"required"`
 	FriendId int64 `json:"friendId" binding:"required"`
 }
 
@@ -330,15 +365,22 @@ func AddFriend(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
 	}
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
 	ins, err := rpc.GetLogicRpcInstance()
 	if err != nil {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
 	client := proto.NewLogicClient(ins.Conn)
-	_, err = client.AddFriend(ins.Ctx, &proto.AddFriendRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = client.AddFriend(_ctx, &proto.AddFriendRequest{
 		FriendId: form.FriendId,
-		Userid:   form.Userid,
+		Userid:   userid.(int64),
 	})
 	if err != nil {
 		zlog.Error(err.Error())
