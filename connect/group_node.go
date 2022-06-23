@@ -1,7 +1,7 @@
 package connect
 
 import (
-	"github.com/pkg/errors"
+	"axisChat/utils/zlog"
 	"github.com/segmentio/kafka-go"
 	"sync"
 )
@@ -23,22 +23,21 @@ func NewGroupNode(groupId int64) *GroupNode {
 	}
 }
 
-func (g *GroupNode) Put(ch *Channel) (err error) {
+func (g *GroupNode) Put(ch *Channel) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	if !g.drop {
-		if g.socketHead != nil {
-			// 前插
-			g.socketHead.Prev = ch
-		}
-		ch.Next = g.socketHead
-		ch.Prev = nil
-		g.socketHead = ch
-		g.OnlineCount++
-	} else {
-		err = errors.New("the group node is drop")
-		return
+	if g.drop {
+		zlog.Debug("before put --the group node is drop")
 	}
+	if g.socketHead != nil {
+		// 前插
+		g.socketHead.Prev = ch
+	}
+	ch.Next = g.socketHead
+	ch.Prev = nil
+	g.socketHead = ch
+	g.OnlineCount++
+	g.drop = false
 	return
 }
 

@@ -75,6 +75,8 @@ func NewBucket(option ...BucketOption) (b *Bucket) {
 	for _, o := range option {
 		o.apply(&options)
 	}
+	b = new(Bucket)
+	b.GroupNode = make(map[int64]*GroupNode)
 	b.socketMap = make(map[int64]*Channel, options.SocketSize)
 	b.routines = make([]chan kafka.Message, options.RoutineAmount)
 	b.routineNum = uint64(options.RoutineAmount)
@@ -107,8 +109,8 @@ func (b *Bucket) PushGroupMsg(ch chan kafka.Message) {
 			switch payload.Op {
 			case common.OpGroupMsgSend:
 				payload.Msg = new(common.GroupMsg)
-				_ = json.Unmarshal(msg.Value, &payload)
-				groupId := payload.Msg.(common.GroupMsg).GroupId
+				_ = json.Unmarshal(msg.Value, &payload.Msg)
+				groupId := payload.Msg.(*common.GroupMsg).GroupId
 				if groupNode := b.GetGroupNode(groupId); groupNode != nil {
 					groupNode.PushGroupMsg(msg)
 				} else {
@@ -118,8 +120,8 @@ func (b *Bucket) PushGroupMsg(ch chan kafka.Message) {
 
 			case common.OpGroupOlineUserCountSend:
 				payload.Msg = new(common.GroupCountMsg)
-				_ = json.Unmarshal(msg.Value, &payload)
-				groupId := payload.Msg.(common.GroupCountMsg).GroupId
+				_ = json.Unmarshal(msg.Value, &payload.Msg)
+				groupId := payload.Msg.(*common.GroupCountMsg).GroupId
 				if groupNode := b.GetGroupNode(groupId); groupNode != nil {
 					groupNode.PushGroupMsg(msg)
 				} else {
@@ -127,8 +129,8 @@ func (b *Bucket) PushGroupMsg(ch chan kafka.Message) {
 				}
 			case common.OpGroupInfoSend:
 				payload.Msg = new(common.GroupInfoMsg)
-				_ = json.Unmarshal(msg.Value, &payload)
-				groupId := payload.Msg.(common.GroupInfoMsg).GroupId
+				_ = json.Unmarshal(msg.Value, &payload.Msg)
+				groupId := payload.Msg.(*common.GroupInfoMsg).GroupId
 				if groupNode := b.GetGroupNode(groupId); groupNode != nil {
 					groupNode.PushGroupMsg(msg)
 				} else {
@@ -141,7 +143,7 @@ func (b *Bucket) PushGroupMsg(ch chan kafka.Message) {
 	}
 }
 
-func (b *Bucket) PutChannel(userid int64, groupId int64, ch *Channel) (err error) {
+func (b *Bucket) PutChannel(userid int64, groupId int64, ch *Channel) {
 	var (
 		groupNode *GroupNode
 		ok        bool
@@ -150,7 +152,7 @@ func (b *Bucket) PutChannel(userid int64, groupId int64, ch *Channel) (err error
 	// 判断用户是否有加入群聊,如果没有则由Bucket直接管理对应Channel
 	if groupId != NoGroup {
 		if groupNode, ok = b.GroupNode[groupId]; !ok {
-			groupNode = new(GroupNode)
+			groupNode = NewGroupNode(groupId)
 			b.GroupNode[groupId] = groupNode
 		}
 		ch.GroupNodes = append(ch.GroupNodes, groupNode)
@@ -160,7 +162,7 @@ func (b *Bucket) PutChannel(userid int64, groupId int64, ch *Channel) (err error
 	b.mutex.Unlock()
 	// 如果当前用户有加入群聊则将该Channel加入对应GroupNode的双向链表中
 	if groupNode != nil {
-		err = groupNode.Put(ch)
+		groupNode.Put(ch)
 	}
 	return
 }

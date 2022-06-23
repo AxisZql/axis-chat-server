@@ -5,6 +5,7 @@ import (
 	"axisChat/etcd"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
+	"context"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -12,6 +13,7 @@ import (
 	"net"
 	"runtime"
 	"strings"
+	"time"
 )
 
 type Connect struct {
@@ -29,9 +31,7 @@ func New() *Connect {
 func (c *Connect) Run() {
 	conf := config.GetConfig()
 	runtime.GOMAXPROCS(conf.ConnectRpc.ConnectBucket.CpuNum)
-	if err := c.InitLogicClient; err != nil {
-		panic(err)
-	}
+	c.InitLogicClient()
 
 	// TODO: init the bucket
 	buckets := make([]*Bucket, conf.ConnectRpc.ConnectBucket.CpuNum)
@@ -52,11 +52,7 @@ func (c *Connect) Run() {
 		}
 	}
 	// 启动WebSocket服务
-	err := c.StartWebSocket(DefaultServer)
-	if err != nil {
-		panic(err)
-	}
-
+	go c.StartWebSocket(DefaultServer)
 }
 
 func initConnectRpcServer(address string, serverId string) (err error) {
@@ -107,7 +103,9 @@ func (c *Connect) Connect(accessToken, serverId string) (userid int64, err error
 		return
 	}
 	logicClient := proto.NewLogicClient(logicRpcInstance.ins.Conn)
-	reply, err := logicClient.Connect(logicRpcInstance.ins.Ctx, &proto.ConnectRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := logicClient.Connect(_ctx, &proto.ConnectRequest{
 		AccessToken: accessToken,
 		ServerId:    serverId,
 	})
@@ -127,7 +125,9 @@ func (c *Connect) DisConnect(userid int64) (err error) {
 		return
 	}
 	logicClient := proto.NewLogicClient(logicRpcInstance.ins.Conn)
-	_, err = logicClient.DisConnect(logicRpcInstance.ins.Ctx, &proto.DisConnectRequest{
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = logicClient.DisConnect(_ctx, &proto.DisConnectRequest{
 		Userid: userid,
 	})
 	if err != nil {
