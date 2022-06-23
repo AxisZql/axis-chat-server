@@ -3,16 +3,15 @@ package etcd
 import (
 	"axisChat/utils/zlog"
 	"context"
+	"fmt"
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	"go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"log"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/coreos/etcd/mvcc/mvccpb"
-	"go.etcd.io/etcd/clientv3"
 )
 
 //ServiceDiscovery 服务发现
@@ -20,15 +19,13 @@ type ServiceDiscovery struct {
 	cli        *clientv3.Client       //etcd client
 	serverList map[string][]*Instance //注册到etcd的所有服务的列表，建立对应path和旗下所有服务的映射，一个serverId对应多个服务
 	indexMap   map[string]int         // 记录上一次轮询获取服务实例的索引
-	serverKey  map[string]int         // 记录所有所有服务对应的所有key，一个key对应一个服务，记录对应服务在Instance slice中的索引
+	serverKey  map[string][]string    // 记录所有所有服务对应的所有key，一个key对应一个服务，记录对应服务在Instance slice中的索引,通过顺序维护目标key在Instance slice中的索引
 	lock       sync.RWMutex
 }
 
 // Instance 服务实例
 type Instance struct {
-	Cancel context.CancelFunc
-	Ctx    context.Context
-	Conn   *grpc.ClientConn
+	Conn *grpc.ClientConn
 }
 
 //NewServiceDiscovery  新建发现服务
@@ -40,14 +37,14 @@ func NewServiceDiscovery(endpoints []string) *ServiceDiscovery {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	return &ServiceDiscovery{
 		cli:        cli,
 		serverList: make(map[string][]*Instance),
 		indexMap:   make(map[string]int),
-		serverKey:  make(map[string]int),
+		serverKey:  make(map[string][]string),
 	}
 }
 
@@ -73,14 +70,16 @@ func (s *ServiceDiscovery) WatchService(prefix string) error {
 //watcher 监听key的前缀
 func (s *ServiceDiscovery) watcher(prefix string) {
 	rch := s.cli.Watch(context.Background(), prefix, clientv3.WithPrefix())
-	log.Printf("watching prefix:%s now...", prefix)
+	zlog.Info(fmt.Sprintf("watching prefix:%s now...", prefix))
 	// TODO：监听具有对应前缀path下面注册服务列表的变更操作
 	for wresp := range rch {
 		for _, ev := range wresp.Events {
 			switch ev.Type {
 			case mvccpb.PUT: //修改或者新增
+				zlog.Warn("新增对应实例")
 				s.SetServiceList(string(ev.Kv.Key), string(ev.Kv.Value))
 			case mvccpb.DELETE: //删除
+				zlog.Warn("删除对应实例")
 				s.DelServiceList(string(ev.Kv.Key))
 			}
 		}
@@ -92,52 +91,48 @@ func (s *ServiceDiscovery) SetServiceList(key, val string) {
 	var err error
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	var idx = -1
-	if _, ok := s.serverKey[key]; !ok {
+	strList := strings.Split(key, "&")
+	serverId := strings.Replace(strList[1], "serverId=", "", -1)
+	if idx := getElementIndexInSlice(key, s.serverKey[serverId]); idx == -1 {
 		ins := &Instance{}
 		ins.Conn, err = grpc.Dial(val, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			zlog.Error(err.Error())
 			return
 		}
-		ins.Ctx, ins.Cancel = context.WithTimeout(context.Background(), time.Second*5)
 		// 如果是新增服务
-		strList := strings.Split(key, "&")
-		serverId := strings.Replace(strList[1], "serverId=", "", -1)
 		if _, ok2 := s.serverList[serverId]; !ok2 {
 			// 如果对应serverId上还没有服务则初始化对应的key
 			s.serverList[serverId] = []*Instance{
 				ins,
 			}
+			// 建立key和Instance之间的映射
+			s.serverKey[serverId] = []string{key}
 			// 初始化轮询获取实例下标
 			s.indexMap[serverId] = 0
-			idx = 0
 		} else {
 			s.serverList[serverId] = append(s.serverList[serverId], ins)
+			s.serverKey[serverId] = append(s.serverKey[serverId], key)
 			idx = len(s.serverList[serverId])
 		}
 	}
-	// 记录对应服务的key,即对应服务在Instance slice 中的索引
-	if idx != -1 {
-		s.serverKey[key] = idx
-	}
-	log.Println("put key :", key, "val:", val)
+	zlog.Info(fmt.Sprintf("put key :%s  val:%s", key, val))
 }
 
 //DelServiceList 删除服务地址
 func (s *ServiceDiscovery) DelServiceList(key string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	idx := s.serverKey[key]
 	strList := strings.Split(key, "&")
 	serverId := strings.Replace(strList[1], "serverId=", "", -1)
+	idx := getElementIndexInSlice(key, s.serverKey[serverId])
+
 	if idx > len(s.serverList[serverId]) {
-		zlog.Error("服务索引不应该大于所有可用服务实例数")
+		zlog.Error(fmt.Sprintf("服务索引不应该大于所有可用服务实例数「 idx=%d  len(serverList[serverId])=%d」", idx, len(s.serverList[serverId])))
 	}
 	// 删除serverId下对应key的一个服务
 	// todo 先关闭rpc客户端
 	gs := s.serverList[serverId][idx]
-	gs.Cancel()
 	err := gs.Conn.Close()
 	if err != nil {
 		zlog.Error(err.Error())
@@ -145,7 +140,11 @@ func (s *ServiceDiscovery) DelServiceList(key string) {
 
 	tmp := s.serverList[serverId][idx+1:]
 	s.serverList[serverId] = append(s.serverList[serverId][:idx], tmp...)
-	log.Println("del key:", key)
+
+	//更新s.serverKey中的索引映射
+	tmp2 := s.serverKey[serverId][idx+1:]
+	s.serverKey[serverId] = append(s.serverKey[serverId][:idx], tmp2...)
+	zlog.Info(fmt.Sprintf("del key:%s", key))
 }
 
 // GetServiceByServerId 根据serverId获取服务实例
@@ -158,6 +157,11 @@ func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance,
 		err = errors.New("the serverId does not exist!!!")
 		return
 	}
+	if len(s.serverList[serverId]) == 0 {
+		zlog.Error(fmt.Sprintf("no logic layer service instance are available!!!! 「len(s.serverList[serverId])=%d   len(s.serverKey[serverId])=%d」", len(s.serverList[serverId]), len(s.serverKey[serverId])))
+		err = errors.New("no logic layer service instance are available")
+		return nil, err
+	}
 	// 开始轮询获取同一个serverId下的实例
 	idx := s.indexMap[serverId] % len(s.serverList[serverId])
 	ins = s.serverList[serverId][idx]
@@ -169,4 +173,13 @@ func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance,
 //Close 关闭服务
 func (s *ServiceDiscovery) Close() error {
 	return s.cli.Close()
+}
+
+func getElementIndexInSlice(key string, slice []string) int {
+	for i, val := range slice {
+		if val == key {
+			return i
+		}
+	}
+	return -1
 }

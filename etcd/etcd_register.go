@@ -1,11 +1,12 @@
 package etcd
 
 import (
+	"axisChat/utils/zlog"
 	"context"
-	"log"
+	"fmt"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/client/v3"
 )
 
 //ServiceRegister 创建租约注册服务
@@ -65,18 +66,27 @@ func (s *ServiceRegister) putKeyWithLease(lease int64) error {
 	}
 
 	s.leaseID = resp.ID
-	log.Println(s.leaseID)
+	zlog.Info(fmt.Sprintf("%v", s.leaseID))
 	s.keepAliveChan = leaseRespChan
-	log.Printf("Put key:%s  val:%s  success!", s.key, s.val)
+	zlog.Info(fmt.Sprintf("Put key:%s  val:%s  success!", s.key, s.val))
 	return nil
 }
 
 //ListenLeaseRespChan 监听 续租情况
 func (s *ServiceRegister) ListenLeaseRespChan() {
-	for leaseKeepResp := range s.keepAliveChan {
-		log.Println("续约成功", leaseKeepResp)
+	defer func() {
+		zlog.Info("关闭续租")
+	}()
+	zlog.Info("开始续约")
+	for {
+		select {
+		case _, ok := <-s.keepAliveChan:
+			if !ok {
+				zlog.Error("服务续租关闭了")
+				return
+			}
+		}
 	}
-	log.Println("关闭续租")
 }
 
 // Close 注销服务
@@ -85,6 +95,6 @@ func (s *ServiceRegister) Close() error {
 	if _, err := s.cli.Revoke(context.Background(), s.leaseID); err != nil {
 		return err
 	}
-	log.Println("撤销租约")
+	zlog.Info("撤销租约")
 	return s.cli.Close()
 }
