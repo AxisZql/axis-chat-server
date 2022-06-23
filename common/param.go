@@ -17,10 +17,10 @@ type MsgSend struct {
 }
 
 type GroupInfoMsg struct {
-	GroupId int64     `json:"group_id"`
-	Count   int       `json:"count"`
-	UserArr []db.User `json:"user_arr"`
-	Op      int       `json:"op"`
+	GroupId int64      `json:"group_id"`
+	Count   int        `json:"count"`
+	UserArr []db.TUser `json:"user_arr"`
+	Op      int        `json:"op"`
 }
 
 type GroupCountMsg struct {
@@ -45,7 +45,7 @@ type GroupMsg struct {
 	GroupId      int64  `json:"group_id"`
 	Content      string `json:"content"`
 	MessageType  string `json:"message_type"`
-	CreateAt     int64  `json:"create_at"`
+	CreateAt     string `json:"create_at"`
 	GroupName    string `json:"group_name"`
 	FromUsername string `json:"from_username"`
 	Op           int    `json:"op"`
@@ -56,7 +56,7 @@ type FriendMsg struct {
 	FriendId     int64  `json:"friend_id"`
 	Content      string `json:"content"`
 	MessageType  string `json:"message_type"`
-	CreateAt     int64  `json:"create_at"`
+	CreateAt     string `json:"create_at"`
 	FriendName   string `json:"friend_name"`
 	FromUsername string `json:"from_username"`
 	Op           int    `json:"op"`

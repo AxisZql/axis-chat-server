@@ -1,6 +1,7 @@
 package config
 
 import (
+	"axisChat/utils/zlog"
 	"github.com/spf13/viper"
 	"os"
 	"runtime"
@@ -27,7 +28,7 @@ type Config struct {
 			Username  string `mapstructure:"username"`
 			Password  string `mapstructure:"password"`
 			DbName    string `mapstructure:"dbName"`
-			InitModel bool   `mapstructure:"dbName"`
+			InitModel bool   `mapstructure:"initModel"`
 		} `mapstructure:"db"`
 
 		Redis struct {
@@ -44,7 +45,7 @@ type Config struct {
 
 		Etcd struct {
 			Address           string `mapstructure:"address"`
-			BasePath          string `mapstructure:"bsePath"`
+			BasePath          string `mapstructure:"basePath"`
 			ServerPathLogic   string `mapstructure:"serverPathLogic"`
 			ServerPathConnect string `mapstructure:"serverPathConnect"`
 			Username          string `mapstructure:"username"`
@@ -78,7 +79,7 @@ type Config struct {
 			RpcAddress string `mapstructure:"rpcAddress"`
 			CerPath    string `mapstructure:"cerPath"`
 			KeyPath    string `mapstructure:"keyPath"`
-		}
+		} `mapstructure:"connect-websocket"`
 	}
 }
 
@@ -94,7 +95,7 @@ func GetConfig() *Config {
 func InitConfig() {
 	// once.Do单例模式
 	once.Do(func() {
-		env := GetGinRunMode()
+		env := GetRunMode()
 		configFilePath := GetCurrentDirPath() + "/" + env + "/"
 		viper.SetConfigType("toml")
 		viper.SetConfigName("api")
@@ -132,8 +133,7 @@ func InitConfig() {
 		_ = viper.Unmarshal(&conf.Common)
 		_ = viper.Unmarshal(&conf.ConnectRpc)
 		_ = viper.Unmarshal(&conf.LogicRpc)
-		//_ = viper.Unmarshal(&conf.Task)
-
+		zlog.Info("init application configuration is ok!!!")
 	})
 }
 

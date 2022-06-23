@@ -13,7 +13,7 @@ import (
 
 func ParseAddress(addr string) (host string, port int, err error) {
 	strList := strings.Split(addr, "@")
-	if len(strList) < 2 || len(strList) >= 2 {
+	if len(strList) < 2 || len(strList) > 2 {
 		return "", 0, errors.New("the addr:%s not in compliance with the rules")
 	}
 	host = strList[0]
