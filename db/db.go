@@ -28,9 +28,16 @@ var (
 	db            *gorm.DB
 	vGroupMessage = `
     create view v_group_message as
-    select mg.*, t_user.username as 'from_username'
+    select mg.*, t_user.username as 'from_username', t_user.avatar
     from (select m.*, t_group.group_name
-          from (select id, from_a as 'userid', to_b as 'group_id', content, message_type, create_at
+          from (select id,
+                       from_a as 'userid',
+                       to_b   as 'group_id',
+                       content,
+                       message_type,
+                       create_at,
+                       snow_id,
+                       belong
                 from t_message
                 where type = 'group'
                 order by snow_id) m
@@ -38,9 +45,16 @@ var (
              join t_user on t_user.id = mg.userid;`
 	vFriendMessage = `
     create view v_friend_message as
-    select mf.*, t_user.username as 'from_username'
+    select mf.*, t_user.username as 'from_username', t_user.avatar
     from (select m.*, friend.username as 'friend_name'
-          from (select id, from_a as 'userid', to_b as 'friend_id', content, message_type, create_at
+          from (select id,
+                       from_a as 'userid',
+                       to_b   as 'friend_id',
+                       content,
+                       message_type,
+                       create_at,
+                       snow_id,
+                       belong
                 from t_message
                 where type = 'friend'
                 order by snow_id) m

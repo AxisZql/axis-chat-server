@@ -203,7 +203,7 @@ func QueryFriendMessageByPage(userid, friendId int64, msgList *[]VFriendMessage,
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Table("v_friend_message").Where("(userid = ? AND friend_id = ?) OR (friend_id = ? AND userid = ?)", userid, friendId, userid, friendId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
+	r := db.Table("v_friend_message").Where("((userid = ? AND friend_id = ?) OR (friend_id = ? AND userid = ?)) AND belong = ?", userid, friendId, userid, friendId, userid).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -219,7 +219,7 @@ func QueryGroupMessageByPage(groupId int64, msgList *[]VGroupMessage, current in
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Table("v_group_message").Where("group_id = ?", groupId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
+	r := db.Table("v_group_message").Where("group_id = ? AND belong = ?", groupId, groupId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -246,9 +246,12 @@ func CreateRelation(relation *TRelation) {
 	}
 }
 
-func SaveMsg(msg *TMessage) {
+func SaveMsgInBatches(msg []TMessage) {
+	if msg == nil || len(msg) == 0 {
+		return
+	}
 	db := GetDb()
-	r := db.Model(&TMessage{}).Create(msg)
+	r := db.CreateInBatches(msg, 100) // 每次更新写入100条数据
 	if r.Error != nil {
 		zlog.Error(r.Error.Error())
 		return
