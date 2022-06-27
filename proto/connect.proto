@@ -38,66 +38,74 @@ message kafkaMsgInfo{
 
 message PushGroupInfoMsgReq{
   message Msg{
-    int64 group_id = 1;
+    int64 groupId = 1;
     int32 count = 2;
-    repeated User user_arr = 3; // 群成员列表
+    repeated User userArr = 3; // 群成员列表
     int32 op = 4;
+    // @inject_tag: json:"onlineUserIds"
+    repeated int64 onlineUserIds = 5;
   } Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }
 
 message PushGroupCountMsgReq{
   message Msg {
-    int64 group_id = 1;
+    int64 groupId = 1;
     int32 count = 2;
     int32 op = 3;
   } Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }
 
 message PushFriendOnlineMsgReq{
   message Msg {
-    int64 friend_id = 1;//上线方id
-    string friend_name = 2;
+    int64 friendId = 1;//上线方id
+    string friendName = 2;
     int32 op = 3;
+    int64 belong = 4;// 消息接收方id
   }Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }
 
 message PushFriendOfflineMsgReq  {
   message Msg {
-    int64 friend_id = 1;
+    int64 friendId = 1;
     int32 op = 2;
+    int64 belong = 3;//消息接收方id
   }Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }
 
 message PushGroupMsgReq {
   message Msg {
     int64 userid = 1;
-    int64 group_id = 2;
+    int64 groupId = 2;
     string content = 3;
-    string message_type = 4;
-    string group_name = 5;
-    string from_username = 6;
-    int64 create_at = 7;
+    string messageType = 4;
+    string groupName = 5;
+    string fromUsername = 6;
+    string createAt = 7;
     int32 op = 8;
-    string snow_id = 9;
+    string snowId = 9;
+    string avatar = 10;
+    int64 belong = 11;
   }Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }
 
 message PushFriendMsgReq {
   message Msg {
     int64 userid = 1;
-    int64 friend_id = 2;
+    int64 friendId = 2;
     string content = 3;
-    string message_type = 4;
-    string group_name = 5;
-    string from_username = 6;
-    int64 create_at = 7;
+    string messageType = 4;
+    string friendName = 5;
+    string fromUsername = 6;
+    string createAt = 7;
     int32 op = 8;
-    string snow_id = 9;
+    string snowId = 9;
+    string avatar = 10;
+    int64  belong = 11; // 该条消息的所属于的信箱
   }Msg msg = 1;
-  kafkaMsgInfo kafka_info = 2;
+  kafkaMsgInfo kafkaInfo = 2;
 }

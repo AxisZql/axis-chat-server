@@ -16,6 +16,7 @@ service Logic{
 
   rpc Register(RegisterRequest) returns(RegisterReply);// 新用户注册
   rpc Login(LoginRequest) returns(LoginReply);//登陆
+  rpc AfterLogin(AfterLoginReq) returns(AfterLoginReply);// 用户成功登陆后获取所有初始聊天记录和所有用户身份信息
   rpc LoginOut(LoginOutRequest) returns(google.protobuf.Empty);//登出
   rpc GetUserInfoByAccessToken(GetUserInfoByAccessTokenRequest) returns(GetUserInfoByAccessTokenReply);//通过凭证换取用户信息
   rpc GetUserInfoByUserid(GetUserInfoByUseridRequest) returns(GetUserInfoByUseridReply);//通过userid换取用户信息
@@ -35,8 +36,8 @@ service Logic{
 }
 
 message ConnectRequest{
-  string access_token = 1; // 用户登陆后获取的生成的唯一有效凭证
-  string server_id = 2; // 当前用户在connect层连接的服务实例id
+  string accessToken = 1; // 用户登陆后获取的生成的唯一有效凭证
+  string serverId = 2; // 当前用户在connect层连接的服务实例id
 }
 
 message ConnectReply{
@@ -54,7 +55,7 @@ message RegisterRequest{
 
 message RegisterReply{
   int32 code = 1;
-  string access_token = 2;
+  string accessToken = 2;
 }
 
 message LoginRequest{
@@ -64,26 +65,98 @@ message LoginRequest{
 
 message LoginReply{
   int32  code = 1;
-  string access_token = 2;
+  string accessToken = 2;
+}
+
+message AfterLoginReq{
+  int64 userid = 1;
+}
+
+message FriendData {
+  // @inject_tag: json:"userid"
+  int64 userid = 1;
+  // @inject_tag: json:"username"
+  string username = 2;
+  // @inject_tag: json:"tag"
+  string tag = 3;
+  // @inject_tag: json:"role"
+  int32 role = 4;
+  // @inject_tag: json:"status"
+  int32 status = 5;
+  // @inject_tag: json:"avatar"
+  string avatar = 6;
+  // @inject_tag: json:"createAt"
+  string createAt = 7;
+  // @inject_tag: json:"messages"
+  repeated ChatMessage messages = 8;
+}
+
+message GroupData {
+  // @inject_tag: json:"groupId"
+  int64 groupId = 1;
+  // @inject_tag: json:"groupName"
+  string groupName = 2;
+  // @inject_tag: json:"notice"
+  string notice = 3;
+  // @inject_tag: json:"userid"
+  int64 userid = 4;
+  // @inject_tag: json:"messages"
+  repeated ChatMessage messages = 5;
+  // @inject_tag: json:"createAt"
+  string createAt = 6;
+}
+
+message UserData {
+  // @inject_tag: json:"userid"
+  int64 userid = 1;
+  // @inject_tag: json:"role"
+  int32 role = 2;
+  // @inject_tag: json:"status"
+  int32 status = 3;
+  // @inject_tag: json:"tag"
+  string tag = 4;
+  // @inject_tag: json:"username"
+  string username = 5;
+  // @inject_tag: json:"createAt"
+  string createAt = 6;
+  // @inject_tag: json:"avatar"
+  string avatar = 7;
+}
+
+message AfterLoginReply{
+  // @inject_tag: json:"friendData"
+  repeated FriendData friendData = 1;
+  // @inject_tag: json:"groupData"
+  repeated GroupData groupData = 2;
+  // @inject_tag: json:"userData"
+  repeated UserData userData = 3;
 }
 
 message LoginOutRequest {
-  string access_token = 1;
+  string accessToken = 1;
 }
 
 message GetUserInfoByAccessTokenRequest{
-  string access_token = 1;
+  string accessToken = 1;
 }
 
 message User {
+  // @inject_tag: json:"id"
   int64 id = 1;
+  // @inject_tag: json:"username"
   string username = 2;
+  // @inject_tag: json:"avatar"
   string avatar = 3;
+  // @inject_tag: json:"role"
   int32 role = 4;
+  // @inject_tag: json:"status"
   int32 status = 5;
+  // @inject_tag: json:"tag"
   string tag = 6;
-  string create_at = 7;
-  string update_at = 8;
+  // @inject_tag: json:"createAt"
+  string createAt = 7;
+  // @inject_tag: json:"updateAt"
+  string updateAt = 8;
 }
 
 message GetUserInfoByAccessTokenReply{
@@ -111,9 +184,9 @@ message UpdateUserInfoReply{
 
 message UpdatePasswordRequest{
   int64 userid = 1;
-  string old_password = 2;
-  string new_password1 = 3;
-  string new_password2 = 4;
+  string oldPassword = 2;
+  string newPassword1 = 3;
+  string newPassword2 = 4;
 }
 
 message SearchUserRequest{
@@ -121,71 +194,83 @@ message SearchUserRequest{
 }
 
 message SearchUserReply{
-  repeated User user_list = 1;
+  repeated User userList = 1;
 }
 
 message Group {
+  // @inject_tag: json:"id"
   int64 id = 1;
+  // @inject_tag: json:"userid"
   int64 userid = 2;
-  string group_name = 3;
+  // @inject_tag: json:"groupName"
+  string groupName = 3;
+  // @inject_tag: json:"notice"
   string notice = 4;
-  string  create_at = 5;
-  string update_at = 6;
+  // @inject_tag: json:"createAt"
+  string  createAt = 5;
+  // @inject_tag: json:"updateAt"
+  string updateAt = 6;
 }
 
 message SearchGroupRequest{
-  string group_name = 1;
+  string groupName = 1;
 }
 
 message SearchGroupReply{
-  repeated Group group_list = 1;
+  repeated Group groupList = 1;
 }
 
 message ChatMessage {
   int64 id = 1;
   int64 userid = 2;
-  int64 group_id = 3;
-  int64 friend_id = 4;
+  int64 groupId = 3;
+  int64 friendId = 4;
   string content = 5;
-  string message_type = 6;
-  string create_at = 7;
-  string from_username = 8;
-  string friend_name = 9;
-  string group_name = 10;
+  string messageType = 6;
+  string createAt = 7;
+  string fromUsername = 8;
+  string friendName = 9;
+  string groupName = 10;
+  // @inject_tag: json:"avatar"
+  string avatar = 11;
+  // @inject_tag: json:"snowId"
+  string snowId = 12;
 }
 
 message GetGroupMsgByPageRequest {
-  int64 group_id = 1;
+  int64 groupId = 1;
   int64 current = 3;
-  int64 page_size = 4;
+  int64 pageSize = 4;
 }
 
 message GetGroupMsgByPageReply{
   int32 code = 1;
-  repeated ChatMessage message_arr = 2;
-  repeated User user_arr = 3;
+  // @inject_tag: json:"messageArr"
+  repeated ChatMessage messageArr = 2;
+  // @inject_tag: json:"userArr"
+  repeated User userArr = 3;
 }
 
 message GetFriendMsgByPageRequest{
-  int64 friend_id = 1;
+  int64 friendId = 1;
   int64 userid = 2;
   int64 current = 3;
-  int64 page_size = 4;
+  int64 pageSize = 4;
 }
 
 message GetFriendMsgByPageReply{
   int32 code = 1;
-  repeated ChatMessage message_arr = 2;
+  repeated ChatMessage messageArr = 2;
 }
 
 message AddGroupRequest{
   int64 userid = 1;
-  int64 group_id = 2;
+  int64 groupId = 2;
 }
 
 message AddFriendRequest{
   int64 userid = 1;
-  int64 friend_id = 2;
+  int64 friendId = 2;
 }
 
 message PushRequest{
@@ -197,9 +282,9 @@ message PushRoomRequest{
 }
 
 message PushRoomCountRequest{
-  int64 group_id = 1;
+  int64 groupId = 1;
 }
 
 message PushRoomInfoRequest{
-  int64 group_id = 1;
+  int64 groupId = 1;
 }
