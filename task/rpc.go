@@ -56,7 +56,7 @@ func (task *Task) pushGroupInfoMsg(serverId string, msg *kafka.Message) {
 	for _, val := range msg.Headers {
 		headers = append(headers, &proto.KafkaMsgInfo_Header{
 			Key:   val.Key,
-			Value: msg.Value,
+			Value: val.Value,
 		})
 	}
 	_, err = connectClient.PushGroupInfoMsg(_ctx, &proto.PushGroupInfoMsgReq{
@@ -86,6 +86,7 @@ func (task *Task) pushGroupCountMsg(serverId string, msg *kafka.Message) {
 	}
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushGroupCountMsgReq_Msg)
+	_ = json.Unmarshal(msg.Value, &payload)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -111,6 +112,7 @@ func (task *Task) pushFriendOnlineMsg(serverId string, msg *kafka.Message) {
 	}
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushFriendOnlineMsgReq_Msg)
+	_ = json.Unmarshal(msg.Value, &payload)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -136,6 +138,7 @@ func (task *Task) pushFriendOfflineMsg(serverId string, msg *kafka.Message) {
 	}
 	var payload common.MsgSend
 	payload.Msg = new(proto.PushFriendOfflineMsgReq_Msg)
+	_ = json.Unmarshal(msg.Value, &payload)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()

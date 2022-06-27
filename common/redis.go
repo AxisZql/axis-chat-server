@@ -26,7 +26,7 @@ const SESSION string = "axis:session:%s"
 // UseridMapToken map the access_token to userid
 const UseridMapToken string = "axis:user_map_token:%d"
 
-// GroupOnlineUser map groupId to record the group all online user`s name
+// GroupOnlineUser map groupId to record the group all online user`s serverId
 const GroupOnlineUser string = "axis:group_online_user:%d"
 
 // GroupOnlineUserCount map groupId to the group online user count todo:改变存储方式，利用hash table存放（因为一致性哈希的造成的key分散问题
@@ -37,6 +37,9 @@ const UseridMapServerId string = "axis:userid_map_serverid:%d"
 
 // UserGroupList 用户加入的群聊id列表
 const UserGroupList string = "axis:user_group_list:%d"
+
+// UserFriendList  用户所有好友id
+const UserFriendList string = "axis:user_friend_list:%d"
 
 // AllOnlineUser 记录所有在线用户
 const AllOnlineUser string = "axis:online_user"
@@ -49,6 +52,14 @@ const KafkaCommitTrigger string = "axis:kafka_commit_trigger:%s"
 
 // RedisLock redis distributed lock , 后缀是topic名称，每个topic持有一个分布式锁
 const RedisLock string = "axis:redis_lock:%s"
+
+// UserLetterBox GroupLetterBox 是暂时存放已经消费的数据但是为被持久化的数据，然后定时批量持久化
+const UserLetterBox string = "axis_user_letter_box:%d"
+
+const GroupLetterBox string = "axis_group_letter_box%d"
+
+// PersistentLock 数据批量持久化时要加上分布式锁
+const PersistentLock string = "axis_persistent_lock%s"
 
 type RedisClient struct {
 	Client map[string]*redis.Client

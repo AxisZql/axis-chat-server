@@ -3,6 +3,8 @@ package task
 import (
 	"axisChat/common"
 	"axisChat/utils/zlog"
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"strconv"
@@ -37,17 +39,19 @@ var (
 	preOffTrigger = make(map[string]*Trigger) // start方法结束后，调用start方法的函数也应该结束
 
 	newTopicTarget = make(chan string, 5)
-	//once           sync.Once
+	once           sync.Once
 )
 
 // UpdateOnlineObjTrigger 定时更新在线群聊和用户当id列表
 func (task *Task) UpdateOnlineObjTrigger() {
 	// 前一次更新完毕后才能进行下一次更新
 	done := make(chan struct{})
-	// 运行程序时首先获取所有在线对象信息
-	go task.updateOnlineObj(done)
+	once.Do(func() {
+		// 运行程序时首先获取所有在线对象信息
+		go task.updateOnlineObj(done)
+	})
 	// 每5秒检测异常redis更新在线用户和群聊
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
@@ -71,20 +75,25 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 
 	newGroupIdMap := make(map[int64]struct{})
 
-	// 更新阶段不允许其他进程进行
-	onlineObj.mutex.Lock()
+	// 更新阶段不允许其他进程进行修改
 	for k, v := range groupMap {
 		count, _ := strconv.Atoi(v)
 		groupId, _ := strconv.Atoi(k)
 		if count != 0 {
 			newGroupIdMap[int64(groupId)] = struct{}{}
+			onlineObj.mutex.RLock()
 			if _, ok := onlineObj.GroupIdMap[int64(groupId)]; !ok {
 				// 更新在线表
+				onlineObj.mutex.RUnlock()
+				onlineObj.mutex.Lock()
 				onlineObj.GroupIdMap[int64(groupId)] = struct{}{}
+				onlineObj.mutex.Unlock()
+				onlineObj.mutex.RLock()
 				// 如果是新上线的Group
 				topic := fmt.Sprintf(common.GroupQueuePrefix, groupId)
 				newTopicTarget <- topic
 			}
+			onlineObj.mutex.RUnlock()
 		}
 	}
 	newUserIdMap := make(map[int64]struct{})
@@ -92,20 +101,24 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 		userId, _ := strconv.Atoi(k)
 		if v == "on" {
 			newUserIdMap[int64(userId)] = struct{}{}
+			onlineObj.mutex.RLock()
 			if _, ok := onlineObj.UserIdMap[int64(userId)]; !ok {
+				onlineObj.mutex.RUnlock()
+				onlineObj.mutex.Lock()
 				onlineObj.UserIdMap[int64(userId)] = struct{}{}
+				onlineObj.mutex.Unlock()
+				onlineObj.mutex.RLock()
 				// 如果是新上线的User
 				topic := fmt.Sprintf(common.FriendQueuePrefix, userId)
 				newTopicTarget <- topic
 			}
+			onlineObj.mutex.RUnlock()
 		}
 	}
-	onlineObj.mutex.Unlock()
-
-	onlineObj.mutex.RLock()
 
 	// todo 筛选出下线的对象,即不使用的topic监听goroutine
 	var oldGroupId []int64
+	onlineObj.mutex.RLock()
 	for k := range onlineObj.GroupIdMap {
 		if _, ok := newGroupIdMap[k]; !ok {
 			topic := fmt.Sprintf(common.GroupQueuePrefix, k)
@@ -113,6 +126,9 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 			oldGroupId = append(oldGroupId, k)
 		}
 	}
+	onlineObj.mutex.RUnlock()
+
+	onlineObj.mutex.RLock()
 	var oldUserid []int64
 	for k := range onlineObj.UserIdMap {
 		if _, ok := newUserIdMap[k]; !ok {
@@ -123,14 +139,17 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 	}
 	onlineObj.mutex.RUnlock()
 
-	onlineObj.mutex.Lock()
 	for _, k := range oldGroupId {
+		onlineObj.mutex.Lock()
 		delete(onlineObj.GroupIdMap, k)
+		onlineObj.mutex.RUnlock()
 	}
 	for _, k := range oldUserid {
+		onlineObj.mutex.Lock()
 		delete(onlineObj.UserIdMap, k)
+		onlineObj.mutex.Unlock()
 	}
-	onlineObj.mutex.Unlock()
+
 	done <- struct{}{}
 }
 
@@ -194,38 +213,23 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 		return
 	}
 
-	// 从最近一次提交的偏移量处读取消息
-	pm, err := common.TopicConsume(reader)
-	if err != nil {
-		zlog.Error(fmt.Sprintf("初始化推送topic=%s 消息失败 err=%v", topic, err))
-		return
-	}
-	offset, _ := strconv.Atoi(string(res))
-	for pm.Offset <= int64(offset) {
-		pm, err = common.TopicConsume(reader)
+	var hasCommit common.KafkaMsgInfo
+	_ = json.Unmarshal(res, &hasCommit)
+	offset := hasCommit.Offset
+	if offset != 0 {
+		// 在Kafka设置正常的偏移量，以redis为准
+		err = reader.CommitMessages(context.Background(), kafka.Message{
+			Topic:     hasCommit.Topic,
+			Partition: hasCommit.Partition,
+			Offset:    offset, //因为CommitMessage提交的偏移量是在Msg的基础上加1，所以-1
+		})
 		if err != nil {
-			zlog.Error(fmt.Sprintf("初始化推送topic=%s 消息失败 err=%v", topic, err))
-			return
+			zlog.Error(err.Error())
 		}
 	}
 
-	// 第一次循环获取分布式锁获取锁成功后才能进行第一次消息推送
-	var lock bool
 	for {
-		lock, _ = redisLock.Acquire()
-		if !lock {
-			// 没有获取分布式锁则继续获取
-			time.Sleep(time.Millisecond * 50)
-			continue
-		} else {
-			break
-		}
-	}
-	//第一次推送消息
-	task.Push(&pm)
-	// 第一次循环获取分布式锁,要第二次获取分布式锁成功后才能进行第二条消息的推送
-	for {
-		lock, _ = redisLock.Acquire()
+		lock, _ := redisLock.Acquire()
 		if !lock {
 			// 没有获取分布式锁则继续获取
 			time.Sleep(time.Millisecond * 50)
@@ -235,7 +239,7 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 		}
 	}
 	// 释放分布式锁
-	_, _ = redisLock.Release()
+	//_, _ = redisLock.Release()
 	defer func() {
 		err = reader.Close()
 		if err != nil {
@@ -254,7 +258,7 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 			// 前一条消息成功推送到connect层时才开始继续获取分布式锁
 			//todo 循环获取分布式锁
 			for {
-				lock, _ = redisLock.Acquire()
+				lock, _ := redisLock.Acquire()
 				if !lock {
 					// 没有获取分布式锁则继续获取
 					time.Sleep(time.Millisecond * 50)
@@ -271,11 +275,13 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 func (task *Task) start(st, done chan struct{}, ty string, id int64, reader *kafka.Reader, topic string) {
 	zlog.Debug("enter.........")
 	// todo：只有当对应用户在线时才完connect层推送对应的消息
+	ticker := time.NewTicker(60 * time.Second)
 
 	for {
 		select {
 		// todo: 只有当connect进行消息提交后才会继续从topic中读取消息
-		case <-st:
+		case a := <-st:
+			fmt.Println(a)
 			switch ty {
 			case "group":
 				onlineObj.mutex.RLock()
@@ -325,6 +331,8 @@ func (task *Task) start(st, done chan struct{}, ty string, id int64, reader *kaf
 				delete(objOffTrigger, topic)
 				return
 			}
+		case <-ticker.C:
+			zlog.Info("check。。。。。")
 		}
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"math/rand"
-	"strconv"
 )
 
 /*
@@ -51,14 +50,12 @@ func (task *Task) pushMsgToConnect(ch chan *kafka.Message) {
 					zlog.Error(fmt.Sprintf("push Group Info msg get err:%v", err))
 					break
 				}
-				for id := range allOnlineUserId {
-					userid, _ := strconv.Atoi(id)
-					res, err := common.RedisGetString(fmt.Sprintf(fmt.Sprintf(common.UseridMapServerId, userid)))
-					if err != nil {
-						zlog.Error(fmt.Sprintf("push Group Info msg when get serverId get err:%v", err))
-						continue
-					}
-					serverId := string(res)
+				// 可以通过限制同一个serverId推送一次消息来解决
+				serverIdMap := make(map[string]struct{})
+				for _, serverId := range allOnlineUserId {
+					serverIdMap[serverId] = struct{}{}
+				}
+				for serverId := range serverIdMap {
 					switch payload.Op {
 					case common.OpGroupInfoSend:
 						task.pushGroupInfoMsg(serverId, msg)
@@ -67,12 +64,11 @@ func (task *Task) pushMsgToConnect(ch chan *kafka.Message) {
 					case common.OpGroupMsgSend:
 						task.pushGroupMsg(serverId, msg)
 					}
-
 				}
 			case common.OpFriendOnlineSend, common.OPFriendOffOnlineSend, common.OpFriendMsgSend:
 				payload.Msg = new(common.FriendOnlineMsg)
 				_ = json.Unmarshal(msg.Value, &payload)
-				res, err := common.RedisGetString(fmt.Sprintf(common.UseridMapServerId, payload.Msg.(*common.FriendOnlineMsg).FriendId))
+				res, err := common.RedisGetString(fmt.Sprintf(common.UseridMapServerId, payload.Msg.(*common.FriendOnlineMsg).Belong))
 				if err != nil {
 					zlog.Error(fmt.Sprintf("push signal msg can`t get serverId by friendId err: %v", err))
 					break
