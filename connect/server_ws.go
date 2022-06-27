@@ -8,9 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
-	"github.com/segmentio/kafka-go"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -24,7 +21,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 		err error
 	)
 	ticker := time.NewTicker(ws.Options.PingPeriod)
-	commitTicker := time.NewTicker(10 * time.Second)
+	commitTicker := time.NewTicker(10 * time.Second) // 每10持久化一次聊天记录
 
 	defer func() {
 		ticker.Stop()
@@ -39,7 +36,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 		return
 	}
 
-	var preMsg *kafka.Message
+	//var preMsg *kafka.Message
 
 	for {
 		select {
@@ -65,7 +62,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 			}
 			zlog.Debug(fmt.Sprintf("message write body:%s", string(msg.Value)))
 
-			n, err := w.Write(msg.Value)
+			n, err := w.Write(DealWebSocketResp(msg.Value))
 			fmt.Println(n)
 			if err = w.Close(); err != nil {
 				zlog.Error(fmt.Sprintf("w.Close err :%v", err))
@@ -74,96 +71,155 @@ func (ws *WsServer) writePump(ch *Channel) {
 			if err != nil {
 				zlog.Error(fmt.Sprintf("push msg get err: %v", err))
 			} else {
-				go func() {
-					// todo 如果当前消息被成功消费了offset>=msg.Offset 则不用提交确认消费的偏移量，因为消费后的消息已经持久化到db中了
-					res, err := common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic))
-					if err != nil {
-						zlog.Error(fmt.Sprintf("common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, %s))", msg.Topic))
-					}
-					offset, _ := strconv.Atoi(string(res))
-					if int64(offset) >= msg.Offset && offset != 0 {
-						// 证明该消息已经被其他服务消费过（群聊消息会出现这种情况）
-						zlog.Info(fmt.Sprintf("msg:%s have been consumed by other server 「curOffset=%d,preOffset=%d」", string(msg.Value), msg.Offset, offset))
-					} else {
-						preMsg = &msg
-						// todo 消息消费成功后释放redis分布式锁
-						redisLocker, _ := common.NewRedisLocker(fmt.Sprintf(common.RedisLock, msg.Topic), msg.Topic)
-
-						//todo task 此处需要持久化消息到db中
-						var msgOp MsgOp
-						_ = json.Unmarshal(msg.Value, &msgOp)
-						// 只有聊天消息才会被持久化
-						switch int(msgOp.Op) {
-						case common.OpGroupMsgSend:
-							var _msg proto.PushGroupMsgReq_Msg
-							_ = json.Unmarshal(msg.Value, &_msg)
-							dbMsg := &db.TMessage{
-								SnowID:      _msg.SnowId,
-								Type:        "group",
-								Content:     _msg.Content,
-								FromA:       _msg.Userid,
-								ToB:         _msg.GroupId,
-								MessageType: _msg.MessageType,
-							}
-							db.SaveMsg(dbMsg)
-						case common.OpFriendMsgSend:
-							var _msg proto.PushFriendMsgReq_Msg
-							_ = json.Unmarshal(msg.Value, &_msg)
-							dbMsg := &db.TMessage{
-								SnowID:      _msg.SnowId,
-								Type:        "friend",
-								Content:     _msg.Content,
-								FromA:       _msg.Userid,
-								ToB:         _msg.FriendId,
-								MessageType: _msg.MessageType,
-							}
-							db.SaveMsg(dbMsg)
+				// todo 消息消费成功后释放redis分布式锁
+				redisLocker, _ := common.NewRedisLocker(fmt.Sprintf(common.RedisLock, msg.Topic), msg.Topic)
+				// todo 如果当前消息被成功消费了offset>=msg.Offset 则不用提交确认消费的偏移量，因为消费后的消息已经持久化到db中了
+				res, err := common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic))
+				if err != nil {
+					zlog.Error(fmt.Sprintf("common.RedisGetString(fmt.Sprintf(common.KafkaTopicOffset, %s))", msg.Topic))
+				}
+				var hasCommit common.KafkaMsgInfo
+				_ = json.Unmarshal(res, &hasCommit)
+				offset := hasCommit.Offset
+				if offset >= msg.Offset && offset != 0 {
+					// 证明该消息已经被其他服务消费过（群聊消息会出现这种情况）
+					zlog.Info(fmt.Sprintf("msg:%s have been consumed by other server 「curOffset=%d,preOffset=%d」", string(msg.Value), msg.Offset, offset))
+					// todo 释放redis分布式锁
+					_, _ = redisLocker.Release()
+				} else {
+					//todo task 此处需要持久化消息到db中
+					var msgOp MsgOp
+					_ = json.Unmarshal(msg.Value, &msgOp)
+					// 只有聊天消息才会被持久化
+					switch int(msgOp.Op) {
+					case common.OpGroupMsgSend:
+						var _msg proto.PushGroupMsgReq_Msg
+						_ = json.Unmarshal(msg.Value, &_msg)
+						dbMsg := &db.TMessage{
+							Belong:      _msg.GroupId,
+							SnowID:      _msg.SnowId,
+							Type:        "group",
+							Content:     _msg.Content,
+							FromA:       _msg.Userid,
+							ToB:         _msg.GroupId,
+							MessageType: _msg.MessageType,
 						}
-						// todo 释放redis分布式锁
-						_, _ = redisLocker.Release()
+						body, _ := json.Marshal(&dbMsg)
+						rLock, _ := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.GroupLetterBox, _msg.GroupId)), "lock")
+						lock, _ := rLock.Acquire()
+						for !lock {
+							lock, _ = rLock.Acquire()
+							time.Sleep(time.Millisecond * 280)
+						}
+						err = common.RedisHSet(fmt.Sprintf(common.GroupLetterBox, _msg.GroupId), _msg.SnowId, body)
+						_, _ = rLock.Release()
+						if err != nil {
+							zlog.Error(fmt.Sprintf("Failed to temporarily store data 「err=%v」", err))
+						}
+					case common.OpFriendMsgSend:
+						var _msg proto.PushFriendMsgReq_Msg
+						_ = json.Unmarshal(msg.Value, &_msg)
+						dbMsg := &db.TMessage{
+							Belong:      ch.Userid,
+							SnowID:      _msg.SnowId,
+							Type:        "friend",
+							Content:     _msg.Content,
+							FromA:       _msg.Userid,
+							ToB:         _msg.FriendId,
+							MessageType: _msg.MessageType,
+						}
+						body, _ := json.Marshal(&dbMsg)
+						rLock, _ := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.UserLetterBox, ch.Userid)), "lock")
+						lock, _ := rLock.Acquire()
+						for !lock {
+							lock, _ = rLock.Acquire()
+							time.Sleep(time.Millisecond * 290)
+						}
+						err = common.RedisHSet(fmt.Sprintf(common.GroupLetterBox, ch.Userid), _msg.SnowId, body)
+						_, _ = rLock.Release()
+						if err != nil {
+							zlog.Error(fmt.Sprintf("Failed to temporarily store data 「err=%v」", err))
+						}
 					}
-				}()
+
+					offsetInfo := common.KafkaMsgInfo{
+						Topic:     msg.Topic,
+						Partition: msg.Partition,
+						Offset:    msg.Offset,
+					}
+					offsetInfoPayload, _ := json.Marshal(offsetInfo)
+					// 以redis提交的偏移量为准
+					err = common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), offsetInfoPayload, 0)
+					if err != nil {
+						zlog.Error(fmt.Sprintf("common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), msg.Offset, 0) err: %v", err))
+						return
+					}
+					// todo 释放redis分布式锁
+					_, _ = redisLocker.Release()
+				}
 			}
 		case <-commitTicker.C:
-			// 当前面有消息发送成功后每10s提交一次偏移量
-			if preMsg == nil {
+			// todo：需要使用分布式锁防止其他新的消息在此刻写入redis
+			rLock, err := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.UserLetterBox, ch.Userid)), "lock")
+			if err != nil {
+				zlog.Error(err.Error())
 				break
 			}
-			go func() {
-				msg := *preMsg
-				// 使用正确的消费组进行消息的提交
-				var consumerSuffix string
-				if strings.Contains(msg.Topic, "friend") {
-					consumerSuffix = fmt.Sprintf("userid-%d", ch.Userid)
-				} else if strings.Contains(msg.Topic, "group") {
-					var msgSend common.MsgSend
-					msgSend.Msg = new(common.GroupCountMsg)
-					_ = json.Unmarshal(msg.Value, &msgSend.Msg)
-					consumerSuffix = fmt.Sprintf("groupid-%d", msgSend.Msg.(*common.GroupCountMsg).GroupId)
-				} else {
-					zlog.Error(fmt.Sprintf("invalid topic name,the project not use this topic=%s", msg.Topic))
-					return
-				}
-				groupId := fmt.Sprintf("%s-%s", msg.Topic, consumerSuffix)
-				err = common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), []byte(fmt.Sprintf("%d", msg.Offset)), 0)
-				if err != nil {
-					zlog.Error(fmt.Sprintf("common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), msg.Offset, 0) err: %v", err))
-					return
-				}
+			rLock.SetExpire(60)
+			lock, _ := rLock.Acquire()
+			//分布式锁获取成功的情况才继续
+			for !lock {
+				lock, _ = rLock.Acquire()
+				time.Sleep(time.Millisecond * 300)
+			}
+			allFriendMsg, err := common.RedisHGetAll(fmt.Sprintf(common.UserLetterBox, ch.Userid))
+			if err != nil {
+				zlog.Error(err.Error())
+				break
+			}
+			var friendMsg []db.TMessage
+			for snowId, payload := range allFriendMsg {
+				zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
+				var tmp db.TMessage
+				_ = json.Unmarshal([]byte(payload), &tmp)
+				friendMsg = append(friendMsg, tmp)
+			}
+			db.SaveMsgInBatches(friendMsg)
+			// 删除已经持久化的数据
+			err = common.RedisDelString(fmt.Sprintf(common.UserLetterBox, ch.Userid))
+			if err != nil {
+				zlog.Error(err.Error())
+			}
 
-				kafkaReader, err := common.GetConsumeReader(consumerSuffix, msg.Topic)
-				if err != nil {
-					zlog.Error(fmt.Sprintf("get kafka reader to commit offset is failure!!!「err:%v」 groupId = %s", err, groupId))
-				}
+			_, _ = rLock.Release()
 
-				// 第一次被成功消费
-				// TODO 消息成功被消费，向kafka中当前topic对应的消费组中提交偏移量
-				err = common.TopicConsumerConfirm(kafkaReader, msg)
-				if err != nil {
-					zlog.Error(fmt.Sprintf("common.TopicConsumerConfirm(KafkaConsumeReader, %s) err %v", msg.Topic, err))
-					return
+			for _, val := range ch.GroupNodes {
+				var groupMsg []db.TMessage
+				rLock, _ = common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.GroupLetterBox, val.groupId)), "lock")
+				rLock.SetExpire(60)
+				for !lock {
+					lock, _ = rLock.Acquire()
+					time.Sleep(time.Millisecond * 300)
 				}
-			}()
+				allGroupMsg, err := common.RedisHGetAll(fmt.Sprintf(common.GroupLetterBox, val.groupId))
+				if err != nil {
+					zlog.Error(err.Error())
+					break
+				}
+				for snowId, payload := range allGroupMsg {
+					zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
+					var tmp db.TMessage
+					_ = json.Unmarshal([]byte(payload), &tmp)
+					groupMsg = append(groupMsg, tmp)
+				}
+				db.SaveMsgInBatches(groupMsg)
+				err = common.RedisDelString(fmt.Sprintf(common.GroupLetterBox, val.groupId))
+				if err != nil {
+					zlog.Error(err.Error())
+				}
+				_, _ = rLock.Release()
+			}
+
 		case <-ticker.C:
 			// 利用心跳包定期检测客户端是否存活
 			err := ch.Conn.SetWriteDeadline(time.Now().Add(ws.Options.WriteWait))
@@ -221,7 +277,7 @@ func (ws *WsServer) readPump(ch *Channel, c *Connect) {
 	})
 
 	for {
-		_, message, err := ch.Conn.ReadMessage()
+		msgType, message, err := ch.Conn.ReadMessage()
 		if err != nil {
 			// 判断连接关闭类型是否websocket.CloseGoingAway、websocket.CloseAbnormalClosure（异常关闭）其中之一
 			// 如果不是则返回true，如果是则返回false
@@ -252,6 +308,13 @@ func (ws *WsServer) readPump(ch *Channel, c *Connect) {
 		}
 		if userId == 0 {
 			zlog.Error(fmt.Sprintf("Invalid AuthToken ,userId empty"))
+			return
+		}
+
+		// 连接后成功身份验证的响应
+		err = ch.Conn.WriteMessage(msgType, []byte("ok"))
+		if err != nil {
+			zlog.Error(err.Error())
 			return
 		}
 
