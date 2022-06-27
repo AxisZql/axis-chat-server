@@ -1,8 +1,10 @@
 package common
 
 import (
+	"axisChat/utils/zlog"
 	"fmt"
 	"github.com/segmentio/kafka-go"
+	"log"
 	"testing"
 )
 
@@ -38,6 +40,17 @@ func TestTopicProduce(t *testing.T) {
 
 func TestTopicConsume(t *testing.T) {
 	GetAllTopic()
-	//TopicConsume("userA-g2", "userA")
-	//TopicConsume("userA-g1", "userA")
+	consumerSuffix := "groupid-3"
+	topic := "group_chat_3"
+	reader, err := GetConsumeReader(consumerSuffix, topic)
+	if err != nil {
+		zlog.Error(err.Error())
+		return
+	}
+	msg, err := TopicConsume(reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = TopicConsumerConfirm(reader, msg)
+	log.Println(msg)
 }

@@ -43,6 +43,12 @@ var (
 	_once sync.Once
 )
 
+type KafkaMsgInfo struct {
+	Topic     string `json:"topic"`
+	Partition int    `json:"partition"`
+	Offset    int64  `json:"offset"`
+}
+
 const (
 	FriendQueuePrefix = "friend_chat_%d"
 	GroupQueuePrefix  = "group_chat_%d"
