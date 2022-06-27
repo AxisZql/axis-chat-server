@@ -2,6 +2,7 @@ package config
 
 import (
 	"axisChat/utils/zlog"
+	"fmt"
 	"github.com/spf13/viper"
 	"os"
 	"runtime"
@@ -55,8 +56,10 @@ type Config struct {
 	}
 	Api struct {
 		Api struct {
-			Host string `mapstructure:"host"`
-			Port int    `mapstructure:"port"`
+			Host         string `mapstructure:"host"`
+			Port         int    `mapstructure:"port"`
+			ChatImgDir   string `mapstructure:"chatImgDir"`
+			AvatarImgDir string `mapstructure:"avatarImgDir"`
 		} `mapstructure:"api"`
 	}
 
@@ -134,6 +137,15 @@ func InitConfig() {
 		_ = viper.Unmarshal(&conf.ConnectRpc)
 		_ = viper.Unmarshal(&conf.LogicRpc)
 		zlog.Info("init application configuration is ok!!!")
+
+		err = os.MkdirAll(conf.Api.Api.ChatImgDir, os.ModePerm)
+		if err != nil {
+			zlog.Error(fmt.Sprintf("创建聊天图片存放目录失败:%v", err))
+		}
+		err = os.MkdirAll(conf.Api.Api.AvatarImgDir, os.ModePerm)
+		if err != nil {
+			zlog.Error(fmt.Sprintf("创建用户头像存放目录失败:%v", err))
+		}
 	})
 }
 
