@@ -48,6 +48,7 @@ func PushUserInfo(userid int64, username string, friendId int64, op int) (err er
 				FriendId:   userid,
 				FriendName: username,
 				Op:         common.OpFriendOnlineSend,
+				Belong:     friendId, //消息接收发id
 			},
 		}
 	case common.OPFriendOffOnlineSend:
@@ -56,6 +57,7 @@ func PushUserInfo(userid int64, username string, friendId int64, op int) (err er
 			Msg: common.FriendOfflineMsg{
 				FriendId: userid,
 				Op:       common.OPFriendOffOnlineSend,
+				Belong:   friendId,
 			},
 		}
 	}
@@ -69,14 +71,15 @@ func PushUserInfo(userid int64, username string, friendId int64, op int) (err er
 	return
 }
 
-func PushGroupInfo(userid, groupId int64, onlineCount int, userList []db.TUser) (err error) {
+func PushGroupInfo(userid, groupId int64, onlineCount int, userList []db.TUser, onlineUserId []int64) (err error) {
 	msg := common.MsgSend{
 		Op: common.OpGroupInfoSend,
 		Msg: common.GroupInfoMsg{
-			GroupId: groupId,
-			Count:   onlineCount,
-			UserArr: userList,
-			Op:      common.OpGroupInfoSend,
+			GroupId:       groupId,
+			Count:         onlineCount,
+			UserArr:       userList,
+			OnlineUserIds: onlineUserId,
+			Op:            common.OpGroupInfoSend,
 		},
 	}
 	body, _ := json.Marshal(&msg)

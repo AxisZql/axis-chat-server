@@ -61,7 +61,8 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 	// 更新该用户加入群聊的所有在redis中信息
 	for _, val := range groupIdList {
 		var has bool
-		has, err = common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), user.Username)
+		// 群聊在线用户hash table 存放userid和对应用户所在serverId的serverId
+		has, err = common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, val), fmt.Sprintf("%d", user.ID), request.ServerId)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
@@ -80,7 +81,19 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 		db.QueryGroupAllUser(val, &userList)
 		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
 		count, _ := strconv.Atoi(countStr)
-		err = PushGroupInfo(user.ID, val, count, userList)
+		var onlineUserIdList []int64
+		// 获取当前群聊的所有在线用户的id
+		var userMap map[string]string
+		userMap, err = common.RedisHGetAll(fmt.Sprintf(common.GroupOnlineUser, val))
+		if err != nil {
+			err = errors.New("系统异常")
+			return
+		}
+		for k := range userMap {
+			id, _ := strconv.Atoi(k)
+			onlineUserIdList = append(onlineUserIdList, int64(id))
+		}
+		err = PushGroupInfo(user.ID, val, count, userList, onlineUserIdList)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
@@ -100,6 +113,14 @@ func (s *ServerLogic) Connect(ctx context.Context, request *proto.ConnectRequest
 			err = errors.New("系统异常")
 			return
 		}
+	}
+
+	// 在redis中写入当前用户所有好友的id
+	b, _ = json.Marshal(friendIdList)
+	err = common.RedisSetString(fmt.Sprintf(common.UserFriendList, user.ID), b, 0)
+	if err != nil {
+		err = errors.New("系统异常")
+		return
 	}
 
 	return &proto.ConnectReply{
@@ -142,8 +163,21 @@ func (s *ServerLogic) DisConnect(ctx context.Context, request *proto.DisConnectR
 		db.QueryGroupAllUser(val, &userList)
 		countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", val))
 		count, _ := strconv.Atoi(countStr)
+		var onlineUserIdList []int64
+		// 获取当前群聊的所有在线用户的id
+		var userMap map[string]string
+		userMap, err = common.RedisHGetAll(fmt.Sprintf(common.GroupOnlineUser, val))
+		if err != nil {
+			err = errors.New("系统异常")
+			return
+		}
+		for k := range userMap {
+			id, _ := strconv.Atoi(k)
+			onlineUserIdList = append(onlineUserIdList, int64(id))
+		}
+
 		// TODO:往该群聊的的topic中生产消息
-		err = PushGroupInfo(request.Userid, val, count, userList)
+		err = PushGroupInfo(request.Userid, val, count, userList, onlineUserIdList)
 		if err != nil {
 			err = errors.New("系统异常")
 			return
@@ -271,6 +305,118 @@ func (s *ServerLogic) LoginOut(ctx context.Context, request *proto.LoginOutReque
 		return
 	}
 	return
+}
+
+func (s *ServerLogic) AfterLogin(ctx context.Context, request *proto.AfterLoginReq) (reply *proto.AfterLoginReply, err error) {
+	reply = new(proto.AfterLoginReply)
+	var (
+		friendIdList    []int64
+		groupIdList     []int64
+		allOnlineUserId []int64
+		res             []byte
+	)
+	res, err = common.RedisGetString(fmt.Sprintf(common.UserFriendList, request.Userid))
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	_ = json.Unmarshal(res, &friendIdList)
+	res, err = common.RedisGetString(fmt.Sprintf(common.UserGroupList, request.Userid))
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	_ = json.Unmarshal(res, &groupIdList)
+	var userMap map[string]string
+	userMap, err = common.RedisHGetAll(common.AllOnlineUser)
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	for K := range userMap {
+		id, _ := strconv.Atoi(K)
+		allOnlineUserId = append(allOnlineUserId, int64(id))
+	}
+
+	// 录入所有好友的最近聊天记录
+	for _, id := range friendIdList {
+		var userInfo db.TUser
+		db.QueryUserById(id, &userInfo)
+		msgList := make([]db.VFriendMessage, 0)
+		db.QueryFriendMessageByPage(request.Userid, id, &msgList, 1, 16)
+		tmp := &proto.FriendData{
+			Userid:   userInfo.ID,
+			Username: userInfo.Username,
+			Tag:      userInfo.Tag,
+			Role:     int32(userInfo.Role),
+			Status:   int32(userInfo.Status),
+			Avatar:   userInfo.Avatar,
+			CreateAt: userInfo.CreateAt.Format(time.RFC3339),
+		}
+		for _, m := range msgList {
+			mtmp := &proto.ChatMessage{
+				Id:           m.ID,
+				Userid:       m.Userid,
+				FriendId:     m.FriendId,
+				Content:      m.Content,
+				MessageType:  m.MessageType,
+				CreateAt:     m.CreateAt.Format(time.RFC3339),
+				FromUsername: m.FromUsername,
+				FriendName:   m.FriendName,
+				Avatar:       m.Avatar,
+				SnowId:       m.SnowId,
+			}
+			tmp.Messages = append(tmp.Messages, mtmp)
+		}
+		reply.FriendData = append(reply.FriendData, tmp)
+	}
+
+	// 录入所有群聊的聊天记录
+	for _, id := range groupIdList {
+		var groupInfo db.TGroup
+		db.QueryGroupById(id, &groupInfo)
+		msgList := make([]db.VGroupMessage, 0)
+		db.QueryGroupMessageByPage(id, &msgList, 1, 16)
+		tmp := &proto.GroupData{
+			GroupId:   groupInfo.ID,
+			GroupName: groupInfo.GroupName,
+			Notice:    groupInfo.Notice,
+			Userid:    groupInfo.ID,
+			CreateAt:  groupInfo.CreateAt.Format(time.RFC3339),
+		}
+		for _, m := range msgList {
+			mtmp := &proto.ChatMessage{
+				Id:           m.ID,
+				Userid:       m.Userid,
+				GroupId:      m.GroupId,
+				Content:      m.Content,
+				MessageType:  m.MessageType,
+				CreateAt:     m.CreateAt.Format(time.RFC3339),
+				FromUsername: m.FromUsername,
+				GroupName:    m.GroupName,
+				Avatar:       m.Avatar,
+				SnowId:       m.SnowId,
+			}
+			tmp.Messages = append(tmp.Messages, mtmp)
+		}
+		reply.GroupData = append(reply.GroupData, tmp)
+	}
+
+	for _, id := range allOnlineUserId {
+		var userInfo db.TUser
+		db.QueryUserById(id, &userInfo)
+		tmp := &proto.UserData{
+			Userid:   userInfo.ID,
+			Avatar:   userInfo.Avatar,
+			Role:     int32(userInfo.Role),
+			Status:   int32(userInfo.Status),
+			Tag:      userInfo.Tag,
+			Username: userInfo.Username,
+			CreateAt: userInfo.CreateAt.Format(time.RFC3339),
+		}
+		reply.UserData = append(reply.UserData, tmp)
+	}
+	return reply, nil
 }
 
 func (s *ServerLogic) GetUserInfoByAccessToken(ctx context.Context, request *proto.GetUserInfoByAccessTokenRequest) (reply *proto.GetUserInfoByAccessTokenReply, err error) {
@@ -430,6 +576,8 @@ func (s *ServerLogic) GetGroupMsgByPage(ctx context.Context, request *proto.GetG
 			CreateAt:     val.CreateAt.Format(time.RFC3339),
 			FromUsername: val.FromUsername,
 			GroupName:    val.GroupName,
+			Avatar:       val.Avatar,
+			SnowId:       val.SnowId,
 		})
 	}
 	for _, val := range userList {
@@ -462,7 +610,9 @@ func (s *ServerLogic) GetFriendMsgByPage(ctx context.Context, request *proto.Get
 			MessageType:  val.MessageType,
 			CreateAt:     val.CreateAt.Format(time.RFC3339),
 			FriendName:   val.FriendName,
+			Avatar:       val.Avatar,
 			FromUsername: val.FromUsername,
+			SnowId:       val.SnowId,
 		})
 	}
 	return
@@ -498,6 +648,15 @@ func (s *ServerLogic) CreateGroup(ctx context.Context, request *proto.Group) (re
 
 func (s *ServerLogic) AddGroup(ctx context.Context, request *proto.AddGroupRequest) (reply *empty.Empty, err error) {
 	reply = new(empty.Empty)
+	// 获取当前用户的serverId
+	var serverIdByte []byte
+	serverIdByte, err = common.RedisGetString(fmt.Sprintf(common.UseridMapServerId, request.Userid))
+	if err != nil {
+		err = errors.New("系统异常，添加群聊失败")
+		return
+	}
+	var user db.TUser
+	db.QueryUserById(request.Userid, &user)
 	relation := &db.TRelation{
 		Type:    "group",
 		ObjectA: request.Userid,
@@ -506,6 +665,55 @@ func (s *ServerLogic) AddGroup(ctx context.Context, request *proto.AddGroupReque
 	db.CreateRelation(relation)
 	if relation.ID == 0 {
 		err = errors.New("系统异常，添加群聊失败")
+		return
+	}
+
+	// 向群聊的topic推送新群聊状态变更的消息
+	groupIdList := db.QueryUserAllGroupId(user.ID)
+
+	// 更新该用户加入群聊的所有在redis中信息
+	var has bool
+	has, err = common.RedisIsNotExistHSet(fmt.Sprintf(common.GroupOnlineUser, request.GroupId), fmt.Sprintf("%d", user.ID), string(serverIdByte))
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	// 之前不在线的用户上线时才更新群聊在线人数
+	if !has {
+		// 更新hash table中对应群聊项的在线人数
+		err = common.RedisHINCRBY(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId), 1)
+		if err != nil {
+			err = errors.New("系统异常")
+			return
+		}
+	}
+	//往群聊对应topic写入群聊在线人数更新信息 TODO:need to test
+	var userList []db.TUser
+	db.QueryGroupAllUser(request.GroupId, &userList)
+	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
+	count, _ := strconv.Atoi(countStr)
+	var onlineUserIdList []int64
+	// 获取当前群聊的所有在线用户的id
+	var userMap map[string]string
+	userMap, err = common.RedisHGetAll(fmt.Sprintf(common.GroupOnlineUser, request.GroupId))
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	for k := range userMap {
+		id, _ := strconv.Atoi(k)
+		onlineUserIdList = append(onlineUserIdList, int64(id))
+	}
+	err = PushGroupInfo(user.ID, request.GroupId, count, userList, onlineUserIdList)
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	// 在redis中写入当前用户的加入的所有群聊id
+	b, _ := json.Marshal(groupIdList)
+	err = common.RedisSetString(fmt.Sprintf(common.UserGroupList, user.ID), b, 0)
+	if err != nil {
+		err = errors.New("系统异常")
 		return
 	}
 	return
@@ -536,9 +744,18 @@ func (s *ServerLogic) Push(ctx context.Context, request *proto.PushRequest) (rep
 		CreateAt:     request.Msg.CreateAt,
 		FriendName:   request.Msg.FriendName,
 		FromUsername: request.Msg.FromUsername,
+		Avatar:       request.Msg.Avatar,
 		Op:           common.OpFriendMsgSend,
 	}
+	// 由于采用写扩散的机制，所以要同时往发送和接收方的topic中写入消息
+	payload.Belong = request.Msg.FriendId
 	err = Push(request.Msg.FriendId, payload, common.OpFriendMsgSend)
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	payload.Belong = request.Msg.Userid
+	err = Push(request.Msg.Userid, payload, common.OpFriendMsgSend)
 	if err != nil {
 		err = errors.New("系统异常")
 		return
@@ -556,6 +773,7 @@ func (s *ServerLogic) PushRoom(ctx context.Context, request *proto.PushRoomReque
 		CreateAt:     request.Msg.CreateAt,
 		GroupName:    request.Msg.GroupName,
 		FromUsername: request.Msg.FromUsername,
+		Avatar:       request.Msg.Avatar,
 		Op:           common.OpGroupMsgSend,
 	}
 	err = Push(request.Msg.GroupId, payload, common.OpGroupMsgSend)
@@ -585,8 +803,20 @@ func (s *ServerLogic) PushRoomInfo(ctx context.Context, request *proto.PushRoomI
 	db.QueryGroupAllUser(request.GroupId, &userList)
 	countStr, _ := common.RedisHGet(common.GroupOnlineUserCount, fmt.Sprintf("%d", request.GroupId))
 	count, _ := strconv.Atoi(countStr)
+	var onlineUserIdList []int64
+	// 获取当前群聊的所有在线用户的id
+	var userMap map[string]string
+	userMap, err = common.RedisHGetAll(fmt.Sprintf(common.GroupOnlineUser, request.GroupId))
+	if err != nil {
+		err = errors.New("系统异常")
+		return
+	}
+	for k := range userMap {
+		id, _ := strconv.Atoi(k)
+		onlineUserIdList = append(onlineUserIdList, int64(id))
+	}
 	// TODO:往该群聊的的topic中生产消息
-	err = PushGroupInfo(0, request.GroupId, count, userList)
+	err = PushGroupInfo(0, request.GroupId, count, userList, onlineUserIdList)
 	if err != nil {
 		err = errors.New("系统异常")
 		return

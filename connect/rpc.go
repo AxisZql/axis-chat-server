@@ -143,8 +143,8 @@ func (sc *ServerConnect) PushFriendOnlineMsg(ctx context.Context, req *proto.Pus
 		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
-	bucket := DefaultServer.Bucket(req.Msg.FriendId)
-	ch := bucket.GetChannel(req.Msg.FriendId)
+	bucket := DefaultServer.Bucket(req.Msg.Belong)
+	ch := bucket.GetChannel(req.Msg.Belong)
 	if ch != nil {
 		ch.Push(kafkaMsg) // 向目标用户的消息发送缓冲区中写入消息
 	} else {
@@ -182,8 +182,8 @@ func (sc *ServerConnect) PushFriendOfflineMsg(ctx context.Context, req *proto.Pu
 		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
-	bucket := DefaultServer.Bucket(req.Msg.FriendId)
-	ch := bucket.GetChannel(req.Msg.FriendId)
+	bucket := DefaultServer.Bucket(req.Msg.Belong)
+	ch := bucket.GetChannel(req.Msg.Belong)
 	if ch != nil {
 		ch.Push(kafkaMsg) // 向目标用户的消息发送缓冲区中写入消息
 	} else {
@@ -254,8 +254,8 @@ func (sc *ServerConnect) PushFriendMsg(ctx context.Context, req *proto.PushFrien
 		Time:          _time,
 	}
 	// todo 获取目标推送用户所在的令牌桶
-	bucket := DefaultServer.Bucket(req.Msg.FriendId)
-	ch := bucket.GetChannel(req.Msg.FriendId)
+	bucket := DefaultServer.Bucket(req.Msg.Belong)
+	ch := bucket.GetChannel(req.Msg.Belong)
 	if ch != nil {
 		ch.Push(kafkaMsg) // 向目标用户的消息发送缓冲区中写入消息
 	} else {
