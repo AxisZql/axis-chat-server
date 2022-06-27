@@ -38,7 +38,7 @@ func SearchGroup(ctx *gin.Context) {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
-	utils.SuccessWithMsg(ctx, nil, reply.GroupList)
+	utils.SuccessWithMsg(ctx, nil, reply)
 }
 
 type getGroupMsgByPageReq struct {
@@ -104,6 +104,16 @@ func CreateGroup(ctx *gin.Context) {
 		Userid:    userid.(int64),
 		GroupName: form.GroupName,
 		Notice:    form.Notice,
+	})
+	if err != nil {
+		zlog.Error(err.Error())
+		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
+		return
+	}
+	// 添加完毕群聊后接着加入创建的群聊
+	_, err = client.AddGroup(_ctx, &proto.AddGroupRequest{
+		GroupId: reply.Id,
+		Userid:  userid.(int64),
 	})
 	if err != nil {
 		zlog.Error(err.Error())

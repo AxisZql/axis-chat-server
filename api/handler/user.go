@@ -3,12 +3,19 @@ package handler
 import (
 	"axisChat/api/rpc"
 	"axisChat/api/utils"
+	"axisChat/config"
 	"axisChat/db"
 	"axisChat/proto"
 	"axisChat/utils/zlog"
 	"context"
+	"crypto/md5"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"io/ioutil"
+	"mime/multipart"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -388,4 +395,149 @@ func AddFriend(ctx *gin.Context) {
 		return
 	}
 	utils.SuccessWithMsg(ctx, nil, nil)
+}
+
+func GetChatHistoryAfterLogin(ctx *gin.Context) {
+	userid, ok := ctx.Get("userid")
+	if !ok {
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
+	ins, err := rpc.GetLogicRpcInstance()
+	if err != nil {
+		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
+		return
+	}
+	client := proto.NewLogicClient(ins.Conn)
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.AfterLogin(_ctx, &proto.AfterLoginReq{
+		Userid: userid.(int64),
+	})
+	if err != nil {
+		zlog.Error(err.Error())
+		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
+		return
+	}
+	utils.SuccessWithMsg(ctx, nil, reply)
+}
+
+type reqSaveChatImage struct {
+	ImageFile *multipart.FileHeader `form:"imageFile" binding:"required"`
+	Ty        string                `form:"ty" binding:"required"`     //图片对象是group还是friend
+	FromId    int64                 `form:"fromId" binding:"required"` //如果是群聊则是groupId，否则是图片发起方的id
+}
+
+func UploadImg(ctx *gin.Context) {
+	var form reqSaveChatImage
+	if err := ctx.ShouldBind(&form); err != nil {
+		zlog.Error(err.Error())
+		utils.FailWithMsg(ctx, "参数校验失败")
+		return
+	}
+	f, _ := form.ImageFile.Open()
+	extendName := strings.Split(form.ImageFile.Filename, ".")
+	if len(extendName) != 2 && extendName[1] != "png" && extendName[1] != "gif" && extendName[1] != "jpg" {
+		utils.FailWithMsg(ctx, "不支持的图片格式;仅支持png|gif|jpg格式")
+		return
+	}
+	defer f.Close()
+	fileData, err2 := ioutil.ReadAll(f)
+	if err2 != nil {
+		zlog.Error(err2.Error())
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+	conf := config.GetConfig()
+	filePath := conf.Api.Api.ChatImgDir + form.Ty + "/" + fmt.Sprintf("%d/", form.FromId)
+	err := os.MkdirAll(filePath, os.ModePerm)
+	if err != nil {
+		zlog.Error(fmt.Sprintf("创建聊天图片存放目录失败:%v", err))
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+
+	fileMD5 := fmt.Sprintf("%x", md5.Sum(fileData))
+	fileName := fileMD5 + "." + extendName[1]
+
+	filePath = filePath + fileName
+	err = ctx.SaveUploadedFile(form.ImageFile, filePath)
+	if err != nil {
+		zlog.Error(err.Error())
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+	//example: https://localhost:8090/images/group/1/8dwekdkjfl.png
+	imgUrl := fmt.Sprintf("%s/images/%s/%d/%s", conf.Api.Api.Host, form.Ty, form.FromId, fileName)
+	utils.SuccessWithMsg(ctx, nil, imgUrl)
+}
+
+type reqUploadAvtar struct {
+	AvatarPic   *multipart.FileHeader `form:"avatarPic" binding:"required"`
+	AccessToken string                `form:"accessToken" binding:"required"`
+}
+
+func UploadAvtar(ctx *gin.Context) {
+	var form reqUploadAvtar
+	if err := ctx.ShouldBind(&form); err != nil {
+		zlog.Error(err.Error())
+		utils.FailWithMsg(ctx, "参数校验失败")
+		return
+	}
+	ins, err := rpc.GetLogicRpcInstance()
+	if err != nil {
+		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
+		return
+	}
+	client := proto.NewLogicClient(ins.Conn)
+	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	reply, err := client.GetUserInfoByAccessToken(_ctx, &proto.GetUserInfoByAccessTokenRequest{
+		AccessToken: form.AccessToken,
+	})
+	if err != nil {
+		zlog.Error(err.Error())
+		utils.ResponseWithCode(ctx, utils.CodeSessionError, nil, nil)
+		return
+	}
+	f, _ := form.AvatarPic.Open()
+	extendName := strings.Split(form.AvatarPic.Filename, ".")
+	if len(extendName) != 2 && extendName[1] != "png" && extendName[1] != "gif" && extendName[1] != "jpg" {
+		utils.FailWithMsg(ctx, "不支持的图片格式;仅支持png|gif|jpg格式")
+		return
+	}
+	defer f.Close()
+	fileData, err2 := ioutil.ReadAll(f)
+	if err2 != nil {
+		zlog.Error(err2.Error())
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+	conf := config.GetConfig()
+	filePath := conf.Api.Api.AvatarImgDir + fmt.Sprintf("%d/", reply.User.Id)
+	err = os.MkdirAll(filePath, os.ModePerm)
+	if err != nil {
+		zlog.Error(fmt.Sprintf("创建聊天图片存放目录失败:%v", err))
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+
+	fileMD5 := fmt.Sprintf("%x", md5.Sum(fileData))
+	fileName := fileMD5 + "." + extendName[1]
+
+	filePath = filePath + fileName
+	err = ctx.SaveUploadedFile(form.AvatarPic, filePath)
+	if err != nil {
+		zlog.Error(err.Error())
+		utils.FailWithMsg(ctx, "系统异常")
+		return
+	}
+	//example: https://localhost:8090/avatars/1/8dwekdkjfl.png
+	imgUrl := fmt.Sprintf("%s/avatars/%d/%s", conf.Api.Api.Host, reply.User.Id, fileName)
+	user := db.TUser{
+		ID:     reply.User.Id,
+		Avatar: imgUrl,
+	}
+	db.UpdateUser(&user)
+	utils.SuccessWithMsg(ctx, nil, imgUrl)
 }

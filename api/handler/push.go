@@ -17,6 +17,7 @@ type pushReq struct {
 	MessageType  string `json:"messageType" binding:"required"`
 	FromUsername string `json:"fromUsername" binding:"required"`
 	FriendName   string `json:"friendName" binding:"required"`
+	Avatar       string `json:"avatar" binding:"required"`
 }
 
 func Push(ctx *gin.Context) {
@@ -47,6 +48,8 @@ func Push(ctx *gin.Context) {
 			MessageType:  form.MessageType,
 			FromUsername: form.FromUsername,
 			FriendName:   form.FriendName,
+			Avatar:       form.Avatar,
+			CreateAt:     time.Now().Format(time.RFC3339),
 		},
 	})
 	if err != nil {
@@ -63,6 +66,7 @@ type pushRoomReq struct {
 	MessageType  string `json:"messageType" binding:"required"`
 	FromUsername string `json:"fromUsername" binding:"required"`
 	GroupName    string `json:"groupName" binding:"required"`
+	Avatar       string `json:"avatar" binding:"required"`
 }
 
 func PushRoom(ctx *gin.Context) {
@@ -94,6 +98,7 @@ func PushRoom(ctx *gin.Context) {
 			FromUsername: form.FromUsername,
 			GroupName:    form.GroupName,
 			CreateAt:     time.Now().Format(time.RFC3339),
+			Avatar:       form.Avatar,
 		},
 	})
 	if err != nil {

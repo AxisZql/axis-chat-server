@@ -4,6 +4,7 @@ import (
 	"axisChat/api/handler"
 	"axisChat/api/utils"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 func Register() *gin.Engine {
@@ -14,6 +15,8 @@ func Register() *gin.Engine {
 	initUserRouter(r)
 	initGroupRouter(r)
 	initPushRouter(r)
+	r.StaticFS("/images/", http.Dir("./static/img/"))
+	r.StaticFS("/avatars/", http.Dir("./static/avatar/"))
 	r.NoRoute(func(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "not support the url")
 	})
@@ -25,14 +28,17 @@ func initUserRouter(r *gin.Engine) {
 	userRouter.POST("/register", handler.Register)
 	userRouter.POST("/login", handler.Login)
 	userRouter.POST("/check-auth", handler.GetUserInfoByAccessToken)
+	userRouter.POST("/upload-img", handler.UploadImg)      //上传图片
+	userRouter.POST("/upload-avatar", handler.UploadAvtar) //上传头像
 	userRouter.Use(utils.CheckSession())
 	{
 		userRouter.GET("/login-out", handler.LoginOut)
+		userRouter.POST("/chat-data", handler.GetChatHistoryAfterLogin) //在用户登陆后获取用户所有好友和群聊的聊天消息
 		userRouter.GET("/info", handler.GetUserInfoByUserid)
 		userRouter.POST("/update-info", handler.UpdateUserInfo)
 		userRouter.POST("/update-password", handler.UpdatePassword)
-		userRouter.GET("/search", handler.SearchUser)
-		userRouter.GET("/chat-history", handler.GetFriendMsgByPage)
+		userRouter.POST("/search", handler.SearchUser)
+		userRouter.POST("/chat-history", handler.GetFriendMsgByPage)
 		userRouter.POST("/add-friend", handler.AddFriend)
 	}
 
@@ -42,8 +48,8 @@ func initGroupRouter(r *gin.Engine) {
 	groupRouter := r.Group("/group")
 	groupRouter.Use(utils.CheckSession())
 	{
-		groupRouter.GET("/search", handler.SearchGroup)
-		groupRouter.GET("/chat-history", handler.GetGroupMsgByPage)
+		groupRouter.POST("/search", handler.SearchGroup)
+		groupRouter.POST("/chat-history", handler.GetGroupMsgByPage)
 		groupRouter.POST("/create", handler.CreateGroup)
 		groupRouter.POST("/add-group", handler.AddGroup)
 	}
