@@ -93,6 +93,16 @@ func (s *ServiceDiscovery) SetServiceList(key, val string) {
 	defer s.lock.Unlock()
 	strList := strings.Split(key, "&")
 	serverId := strings.Replace(strList[1], "serverId=", "", -1)
+
+	getElementIndexInSlice := func(key string, slice []string) int {
+		for i, val := range slice {
+			if val == key {
+				return i
+			}
+		}
+		return -1
+	}
+
 	if idx := getElementIndexInSlice(key, s.serverKey[serverId]); idx == -1 {
 		ins := &Instance{}
 		ins.Conn, err = grpc.Dial(val, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -113,7 +123,7 @@ func (s *ServiceDiscovery) SetServiceList(key, val string) {
 		} else {
 			s.serverList[serverId] = append(s.serverList[serverId], ins)
 			s.serverKey[serverId] = append(s.serverKey[serverId], key)
-			idx = len(s.serverList[serverId])
+			//idx = len(s.serverList[serverId])
 		}
 	}
 	zlog.Info(fmt.Sprintf("put key :%s  val:%s", key, val))
@@ -122,21 +132,25 @@ func (s *ServiceDiscovery) SetServiceList(key, val string) {
 //DelServiceList 删除服务地址
 func (s *ServiceDiscovery) DelServiceList(key string) {
 	s.lock.Lock()
-	defer s.lock.Unlock()
 	strList := strings.Split(key, "&")
 	serverId := strings.Replace(strList[1], "serverId=", "", -1)
-	idx := getElementIndexInSlice(key, s.serverKey[serverId])
 
-	if idx > len(s.serverList[serverId]) {
+	getElementIndexInSlice := func(key string, slice []string) int {
+		for i, val := range slice {
+			if val == key {
+				return i
+			}
+		}
+		return -1
+	}
+
+	idx := getElementIndexInSlice(key, s.serverKey[serverId])
+	if idx >= len(s.serverList[serverId]) {
 		zlog.Error(fmt.Sprintf("服务索引不应该大于所有可用服务实例数「 idx=%d  len(serverList[serverId])=%d」", idx, len(s.serverList[serverId])))
 	}
 	// 删除serverId下对应key的一个服务
 	// todo 先关闭rpc客户端
 	gs := s.serverList[serverId][idx]
-	err := gs.Conn.Close()
-	if err != nil {
-		zlog.Error(err.Error())
-	}
 
 	tmp := s.serverList[serverId][idx+1:]
 	s.serverList[serverId] = append(s.serverList[serverId][:idx], tmp...)
@@ -144,14 +158,19 @@ func (s *ServiceDiscovery) DelServiceList(key string) {
 	//更新s.serverKey中的索引映射
 	tmp2 := s.serverKey[serverId][idx+1:]
 	s.serverKey[serverId] = append(s.serverKey[serverId][:idx], tmp2...)
+	s.lock.Unlock()
 	zlog.Info(fmt.Sprintf("del key:%s", key))
+
+	err := gs.Conn.Close()
+	if err != nil {
+		zlog.Error(err.Error())
+	}
 }
 
 // GetServiceByServerId 根据serverId获取服务实例
 func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance, err error) {
 	//todo 对于logic layer 所有的logic层服务人为指定一个serverId，所有的logic 实例都使用这个serverId
 	s.lock.RLock()
-	defer s.lock.RUnlock()
 	_, ok := s.serverList[serverId]
 	if !ok {
 		err = errors.New("the serverId does not exist!!!")
@@ -165,6 +184,10 @@ func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance,
 	// 开始轮询获取同一个serverId下的实例
 	idx := s.indexMap[serverId] % len(s.serverList[serverId])
 	ins = s.serverList[serverId][idx]
+	s.lock.RUnlock()
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	// 设置下一次轮询的索引
 	s.indexMap[serverId] = (s.indexMap[serverId] + 1) % len(s.serverList[serverId])
 	return
@@ -173,13 +196,4 @@ func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance,
 //Close 关闭服务
 func (s *ServiceDiscovery) Close() error {
 	return s.cli.Close()
-}
-
-func getElementIndexInSlice(key string, slice []string) int {
-	for i, val := range slice {
-		if val == key {
-			return i
-		}
-	}
-	return -1
 }
