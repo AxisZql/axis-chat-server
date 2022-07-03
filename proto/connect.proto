@@ -89,6 +89,7 @@ message PushGroupMsgReq {
     string snowId = 9;
     string avatar = 10;
     int64 belong = 11;
+    int64 watermark = 12;
   }Msg msg = 1;
   kafkaMsgInfo kafkaInfo = 2;
 }
@@ -106,6 +107,7 @@ message PushFriendMsgReq {
     string snowId = 9;
     string avatar = 10;
     int64  belong = 11; // 该条消息的所属于的信箱
+    int64 watermark = 12;
   }Msg msg = 1;
   kafkaMsgInfo kafkaInfo = 2;
 }

@@ -235,6 +235,7 @@ message ChatMessage {
   string avatar = 11;
   // @inject_tag: json:"snowId"
   string snowId = 12;
+  int64 watermark = 13;//消息水印 时间戳格式
 }
 
 message GetGroupMsgByPageRequest {
