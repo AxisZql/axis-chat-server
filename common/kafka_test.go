@@ -2,6 +2,7 @@ package common
 
 import (
 	"axisChat/utils/zlog"
+	"context"
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"log"
@@ -47,7 +48,7 @@ func TestTopicConsume(t *testing.T) {
 		zlog.Error(err.Error())
 		return
 	}
-	msg, err := TopicConsume(reader)
+	msg, err := TopicConsume(context.Background(), reader)
 	if err != nil {
 		log.Fatal(err)
 	}

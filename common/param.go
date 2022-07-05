@@ -53,6 +53,7 @@ type GroupMsg struct {
 	FromUsername string `json:"fromUsername"`
 	Avatar       string `json:"avatar"`
 	Op           int    `json:"op"`
+	Watermark    int64  `json:"watermark"`
 }
 
 type FriendMsg struct {
@@ -66,4 +67,5 @@ type FriendMsg struct {
 	Avatar       string `json:"avatar"`
 	Op           int    `json:"op"`
 	Belong       int64  `json:"belong"` // 消息所属于的信箱id（用户id），在connect层需要根据这个id把消息推送到对应用户
+	Watermark    int64  `json:"watermark"`
 }

@@ -55,7 +55,7 @@ const (
 )
 
 func watchLongTimeNotUseConn() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer func() {
 		ticker.Stop()
 	}()
@@ -63,18 +63,19 @@ func watchLongTimeNotUseConn() {
 	case <-ticker.C:
 		producerConnMap.mutex.RLock()
 		for key, val := range producerConnMap.CreateTime {
-			// 超过1.5min没有使用的连接将会被断开
-			if time.Since(val) > 30*time.Second {
+			// 超过1min没有使用的连接将会被断开
+			if time.Since(val) > 60*time.Second {
+				conn := producerConnMap.SocketMap[key]
 				producerConnMap.mutex.RUnlock()
 				producerConnMap.mutex.Lock()
-				err := producerConnMap.SocketMap[key].Close()
-				if err != nil {
-					zlog.Error(err.Error())
-				}
 				delete(producerConnMap.SocketMap, key)
 				delete(producerConnMap.CreateTime, key)
 				producerConnMap.mutex.Unlock()
 				producerConnMap.mutex.RLock()
+				err := conn.Close()
+				if err != nil {
+					zlog.Error(err.Error())
+				}
 			}
 		}
 		producerConnMap.mutex.RUnlock()
@@ -96,8 +97,10 @@ func getProducerConn(objectId int64, _type string) (*kafka.Conn, error) {
 	}
 	producerConnMap.mutex.RLock()
 	if conn, ok := producerConnMap.SocketMap[topic]; ok {
-		producerConnMap.CreateTime[topic] = time.Now()
 		producerConnMap.mutex.RUnlock()
+		producerConnMap.mutex.Lock()
+		producerConnMap.CreateTime[topic] = time.Now()
+		producerConnMap.mutex.Unlock()
 		return conn, nil
 	}
 	producerConnMap.mutex.RUnlock()
@@ -135,7 +138,7 @@ func TopicProduce(objectId int64, _type string, msg []byte) error {
 	// 设置写入消息的超时时间
 	err = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
-		err = errors.Wrap(err, "conn.SetWriteDeadlin get err")
+		err = errors.Wrap(err, "conn.SetWriteDeadline get err")
 
 		// 删除不可用的kafka实例
 		producerConnMap.mutex.Lock()
@@ -156,6 +159,7 @@ func TopicProduce(objectId int64, _type string, msg []byte) error {
 		delete(producerConnMap.SocketMap, topic)
 		delete(producerConnMap.CreateTime, topic)
 		producerConnMap.mutex.Unlock()
+		_ = conn.Close()
 		return err
 	}
 	zlog.Debug(fmt.Sprintf("success write msg=%s", string(msg)))
@@ -164,43 +168,13 @@ func TopicProduce(objectId int64, _type string, msg []byte) error {
 
 // ===================消费者===============
 
-func watchLongTimeNotUseReader() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer func() {
-		ticker.Stop()
-	}()
-	select {
-	case <-ticker.C:
-		consumerReader.mutex.RLock()
-		for key, val := range consumerReader.CreateTime {
-			// 超过5min没有使用的连接将会被断开
-			if time.Since(val) > 5*time.Minute {
-				consumerReader.mutex.RUnlock()
-				consumerReader.mutex.Lock()
-				err := consumerReader.ReaderMap[key].Close()
-				if err != nil {
-					zlog.Error(err.Error())
-				}
-				delete(consumerReader.ReaderMap, key)
-				delete(consumerReader.ReaderMap, key)
-				consumerReader.mutex.Unlock()
-				consumerReader.mutex.RLock()
-			}
-		}
-		consumerReader.mutex.RUnlock()
-	}
-}
-
 func getConsumerReader(groupId string, topic string) (*kafka.Reader, error) {
-	_once.Do(func() {
-		// 监听并删除长时间不使用的Reader连接
-		go watchLongTimeNotUseReader()
-	})
-
 	consumerReader.mutex.RLock()
 	if reader, ok := consumerReader.ReaderMap[groupId]; ok {
-		consumerReader.CreateTime[groupId] = time.Now()
 		consumerReader.mutex.RUnlock()
+		consumerReader.mutex.Lock()
+		consumerReader.CreateTime[groupId] = time.Now()
+		consumerReader.mutex.Unlock()
 		return reader, nil
 	}
 	consumerReader.mutex.RUnlock()
@@ -235,12 +209,8 @@ func GetConsumeReader(consumerSuffix string, topic string) (*kafka.Reader, error
 	return reader, nil
 }
 
-func TopicConsume(reader *kafka.Reader) (msg kafka.Message, err error) {
-	msg, err = reader.FetchMessage(context.Background())
-	if err != nil {
-		zlog.Error(err.Error())
-		return
-	}
+func TopicConsume(ctx context.Context, reader *kafka.Reader) (msg kafka.Message, err error) {
+	msg, err = reader.FetchMessage(ctx)
 	return
 }
 
