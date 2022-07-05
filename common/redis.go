@@ -47,8 +47,8 @@ const AllOnlineUser string = "axis:online_user"
 // KafkaTopicOffset 记录kafka最后一次提交的偏移量,topic名和最新提交偏移量的映射
 const KafkaTopicOffset string = "axis:kafka_topic_offset:%s"
 
-// KafkaCommitTrigger  利用List实现简单的消息队列，每当connect支持消费一个消息时将该消息偏移量写入该消息队列
-const KafkaCommitTrigger string = "axis:kafka_commit_trigger:%s"
+// StatusMsgQueue  利用List实现简单的消息队列，存放对象上下线状态消息
+const StatusMsgQueue string = "axis:status_msg_queue"
 
 // RedisLock redis distributed lock , 后缀是topic名称，每个topic持有一个分布式锁
 const RedisLock string = "axis:redis_lock:%s"
@@ -255,6 +255,11 @@ func RedisIsNotExistHSet(key string, filed string, value interface{}) (has bool,
 		}
 		return false, nil
 	}
+	err = client.HSet(key, filed, value).Err()
+	if err != nil {
+		zlog.Error(err.Error())
+		return false, err
+	}
 	return true, nil
 }
 
@@ -359,13 +364,13 @@ func RedisDecr(key string) error {
 	return nil
 }
 
-func RedisRPUSH(key string, value ...interface{}) error {
+func RedisLPUSH(key string, value []byte) error {
 	client, err := GetRedisClientByKey(key)
 	if err != nil {
 		zlog.Error(err.Error())
 		return err
 	}
-	err = client.RPush(key, value).Err()
+	err = client.LPush(key, value).Err()
 	if err != nil {
 		zlog.Error(err.Error())
 		return err
@@ -373,21 +378,17 @@ func RedisRPUSH(key string, value ...interface{}) error {
 	return nil
 }
 
-func RedisBRPOP(key string, timeOut time.Duration) (string, error) {
+func RedisBRPOP(key string, timeOut time.Duration) ([]string, error) {
 	client, err := GetRedisClientByKey(key)
 	if err != nil {
 		zlog.Error(err.Error())
-		return "", err
+		return []string{}, err
 	}
 	var result []string
 	result, err = client.BRPop(timeOut, key).Result()
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		zlog.Error(err.Error())
-		return "", err
+		return []string{}, err
 	}
-	if len(result) >= 2 {
-		return result[1], nil
-	}
-	zlog.Error("unforeseen circumstances")
-	return "", errors.New("unforeseen circumstances")
+	return result, nil
 }
