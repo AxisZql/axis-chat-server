@@ -24,23 +24,55 @@ func (ws *WsServer) writePump(ch *Channel) {
 	commitTicker := time.NewTicker(10 * time.Second) // 每10持久化一次聊天记录
 
 	defer func() {
-		ticker.Stop()
 		commitTicker.Stop()
 		err := ch.Conn.Close()
 		if err != nil {
 			zlog.Error(err.Error())
 		}
+		saveChatDataToDb(ch)
 	}()
 	if err != nil {
 		zlog.Error(fmt.Sprintf("get kafka consum reader err:%v", err))
 		return
 	}
 
-	//var preMsg *kafka.Message
-
 	for {
 		select {
-		case msg, ok := <-ch.Broadcast:
+		case msg, ok := <-ch.BroadcastStatus:
+			go func() {
+				err := ch.Conn.SetWriteDeadline(time.Now().Add(ws.Options.WriteWait))
+				if err != nil {
+					zlog.Warn(fmt.Sprintf("ch.Conn.SetWriteDeadline err : %v", err))
+				}
+				if !ok {
+					// ok==false 证明channel被关闭
+					zlog.Warn("SetWriteDeadline not ok")
+					// 出现异常给客户端发送关闭连接消息包
+					err = ch.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+					if err != nil {
+						zlog.Warn(fmt.Sprintf("ch.Conn.WriteMessage err :%v", err))
+					}
+					return
+				}
+				// 设置消息数据格式
+				w, err := ch.Conn.NextWriter(websocket.TextMessage)
+				if err != nil {
+					zlog.Warn(fmt.Sprintf("ch.Conn.NextWriter err %v", err))
+					return
+				}
+				zlog.Debug(fmt.Sprintf("message write body:%s", string(msg)))
+
+				_, err = w.Write(DealWebSocketResp(msg))
+				if err = w.Close(); err != nil {
+					zlog.Error(fmt.Sprintf("w.Close err :%v", err))
+					return
+				}
+				if err != nil {
+					zlog.Error(fmt.Sprintf("push status msg get err: %v", err))
+				}
+			}()
+
+		case msg, ok := <-ch.BroadcastMsg:
 			err := ch.Conn.SetWriteDeadline(time.Now().Add(ws.Options.WriteWait))
 			if err != nil {
 				zlog.Warn(fmt.Sprintf("ch.Conn.SetWriteDeadline err : %v", err))
@@ -62,8 +94,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 			}
 			zlog.Debug(fmt.Sprintf("message write body:%s", string(msg.Value)))
 
-			n, err := w.Write(DealWebSocketResp(msg.Value))
-			fmt.Println(n)
+			_, err = w.Write(DealWebSocketResp(msg.Value))
 			if err = w.Close(); err != nil {
 				zlog.Error(fmt.Sprintf("w.Close err :%v", err))
 				return
@@ -87,6 +118,21 @@ func (ws *WsServer) writePump(ch *Channel) {
 					// todo 释放redis分布式锁
 					_, _ = redisLocker.Release()
 				} else {
+					offsetInfo := common.KafkaMsgInfo{
+						Topic:     msg.Topic,
+						Partition: msg.Partition,
+						Offset:    msg.Offset,
+					}
+					offsetInfoPayload, _ := json.Marshal(offsetInfo)
+					// 以redis提交的偏移量为准
+					err = common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), offsetInfoPayload, 0)
+					if err != nil {
+						zlog.Error(fmt.Sprintf("common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), msg.Offset, 0) err: %v", err))
+						return
+					}
+					// todo 释放redis分布式锁
+					_, _ = redisLocker.Release()
+
 					//todo task 此处需要持久化消息到db中
 					var msgOp MsgOp
 					_ = json.Unmarshal(msg.Value, &msgOp)
@@ -106,6 +152,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 						}
 						body, _ := json.Marshal(&dbMsg)
 						rLock, _ := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.GroupLetterBox, _msg.GroupId)), "lock")
+						rLock.SetExpire(60)
 						lock, _ := rLock.Acquire()
 						for !lock {
 							lock, _ = rLock.Acquire()
@@ -130,6 +177,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 						}
 						body, _ := json.Marshal(&dbMsg)
 						rLock, _ := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.UserLetterBox, ch.Userid)), "lock")
+						rLock.SetExpire(60)
 						lock, _ := rLock.Acquire()
 						for !lock {
 							lock, _ = rLock.Acquire()
@@ -141,85 +189,11 @@ func (ws *WsServer) writePump(ch *Channel) {
 							zlog.Error(fmt.Sprintf("Failed to temporarily store data 「err=%v」", err))
 						}
 					}
-
-					offsetInfo := common.KafkaMsgInfo{
-						Topic:     msg.Topic,
-						Partition: msg.Partition,
-						Offset:    msg.Offset,
-					}
-					offsetInfoPayload, _ := json.Marshal(offsetInfo)
-					// 以redis提交的偏移量为准
-					err = common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), offsetInfoPayload, 0)
-					if err != nil {
-						zlog.Error(fmt.Sprintf("common.RedisSetString(fmt.Sprintf(common.KafkaTopicOffset, msg.Topic), msg.Offset, 0) err: %v", err))
-						return
-					}
-					// todo 释放redis分布式锁
-					_, _ = redisLocker.Release()
 				}
 			}
 		case <-commitTicker.C:
-			// todo：需要使用分布式锁防止其他新的消息在此刻写入redis
-			rLock, err := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.UserLetterBox, ch.Userid)), "lock")
-			if err != nil {
-				zlog.Error(err.Error())
-				break
-			}
-			rLock.SetExpire(60)
-			lock, _ := rLock.Acquire()
-			//分布式锁获取成功的情况才继续
-			for !lock {
-				lock, _ = rLock.Acquire()
-				time.Sleep(time.Millisecond * 300)
-			}
-			allFriendMsg, err := common.RedisHGetAll(fmt.Sprintf(common.UserLetterBox, ch.Userid))
-			if err != nil {
-				zlog.Error(err.Error())
-				break
-			}
-			var friendMsg []db.TMessage
-			for snowId, payload := range allFriendMsg {
-				zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
-				var tmp db.TMessage
-				_ = json.Unmarshal([]byte(payload), &tmp)
-				friendMsg = append(friendMsg, tmp)
-			}
-			db.SaveMsgInBatches(friendMsg)
-			// 删除已经持久化的数据
-			err = common.RedisDelString(fmt.Sprintf(common.UserLetterBox, ch.Userid))
-			if err != nil {
-				zlog.Error(err.Error())
-			}
-
-			_, _ = rLock.Release()
-
-			for _, val := range ch.GroupNodes {
-				var groupMsg []db.TMessage
-				rLock, _ = common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.GroupLetterBox, val.groupId)), "lock")
-				rLock.SetExpire(60)
-				for !lock {
-					lock, _ = rLock.Acquire()
-					time.Sleep(time.Millisecond * 300)
-				}
-				allGroupMsg, err := common.RedisHGetAll(fmt.Sprintf(common.GroupLetterBox, val.groupId))
-				if err != nil {
-					zlog.Error(err.Error())
-					break
-				}
-				for snowId, payload := range allGroupMsg {
-					zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
-					var tmp db.TMessage
-					_ = json.Unmarshal([]byte(payload), &tmp)
-					groupMsg = append(groupMsg, tmp)
-				}
-				db.SaveMsgInBatches(groupMsg)
-				err = common.RedisDelString(fmt.Sprintf(common.GroupLetterBox, val.groupId))
-				if err != nil {
-					zlog.Error(err.Error())
-				}
-				_, _ = rLock.Release()
-			}
-
+			// 定时持久化数据到db
+			saveChatDataToDb(ch)
 		case <-ticker.C:
 			// 利用心跳包定期检测客户端是否存活
 			err := ch.Conn.SetWriteDeadline(time.Now().Add(ws.Options.WriteWait))
@@ -228,6 +202,8 @@ func (ws *WsServer) writePump(ch *Channel) {
 			}
 			zlog.Debug(fmt.Sprintf("websocket.PingMessage :%v", websocket.PingMessage))
 			if err := ch.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				// 确保已经推送的消息被正确提交偏移量后才退出
+				ticker.Stop()
 				return
 			}
 		}
@@ -333,5 +309,68 @@ func (ws *WsServer) readPump(ch *Channel, c *Connect) {
 		for _, val := range groupIdList {
 			b.PutChannel(userId, val, ch)
 		}
+	}
+}
+
+// 持久化数据到db
+func saveChatDataToDb(ch *Channel) {
+	// todo：需要使用分布式锁防止其他新的消息在此刻写入redis
+	rLock, err := common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.UserLetterBox, ch.Userid)), "lock")
+	if err != nil {
+		zlog.Error(err.Error())
+		return
+	}
+	rLock.SetExpire(60)
+	lock, _ := rLock.Acquire()
+	//分布式锁获取成功的情况才继续
+	for !lock {
+		lock, _ = rLock.Acquire()
+		time.Sleep(time.Millisecond * 300)
+	}
+	allFriendMsg, err := common.RedisHGetAll(fmt.Sprintf(common.UserLetterBox, ch.Userid))
+	if err != nil {
+		zlog.Error(err.Error())
+		return
+	}
+	var friendMsg []db.TMessage
+	for snowId, payload := range allFriendMsg {
+		zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
+		var tmp db.TMessage
+		_ = json.Unmarshal([]byte(payload), &tmp)
+		friendMsg = append(friendMsg, tmp)
+	}
+	db.SaveMsgInBatches(friendMsg)
+	// 删除已经持久化的数据
+	err = common.RedisDelString(fmt.Sprintf(common.UserLetterBox, ch.Userid))
+	if err != nil {
+		zlog.Error(err.Error())
+	}
+	_, _ = rLock.Release()
+
+	for _, val := range ch.GroupNodes {
+		var groupMsg []db.TMessage
+		rLock, _ = common.NewRedisLocker(fmt.Sprintf(common.PersistentLock, fmt.Sprintf(common.GroupLetterBox, val.groupId)), "lock")
+		rLock.SetExpire(60)
+		for !lock {
+			lock, _ = rLock.Acquire()
+			time.Sleep(time.Millisecond * 300)
+		}
+		allGroupMsg, err := common.RedisHGetAll(fmt.Sprintf(common.GroupLetterBox, val.groupId))
+		if err != nil {
+			zlog.Error(err.Error())
+			break
+		}
+		for snowId, payload := range allGroupMsg {
+			zlog.Debug(fmt.Sprintf("snowId==%s", snowId))
+			var tmp db.TMessage
+			_ = json.Unmarshal([]byte(payload), &tmp)
+			groupMsg = append(groupMsg, tmp)
+		}
+		db.SaveMsgInBatches(groupMsg)
+		err = common.RedisDelString(fmt.Sprintf(common.GroupLetterBox, val.groupId))
+		if err != nil {
+			zlog.Error(err.Error())
+		}
+		_, _ = rLock.Release()
 	}
 }
