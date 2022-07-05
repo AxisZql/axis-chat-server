@@ -19,10 +19,15 @@ import (
 type Bucket struct {
 	mutex      sync.RWMutex
 	socketMap  map[int64]*Channel // userid和conn之间的映射
+	GroupNode  map[int64]*GroupNode
 	routineIdx uint64
 	routineNum uint64
 	routines   []chan kafka.Message // 所有要进行消息推送的消息在channel队列中排队
-	GroupNode  map[int64]*GroupNode
+
+	// statusMsg
+	_routineIdx uint64
+	_routineNum uint64
+	_routines   []chan []byte // 所有要进行消息推送的消息在channel队列中排队
 }
 
 type bucketOptions struct {
@@ -87,6 +92,16 @@ func NewBucket(option ...BucketOption) (b *Bucket) {
 		// TODO: 开始监听每个请求队列发送过来的消息
 		go b.PushGroupMsg(c)
 	}
+
+	b._routines = make([]chan []byte, options.RoutineAmount)
+	b._routineNum = uint64(options.RoutineAmount)
+	b._routineIdx = 0
+	for i := 0; i < options.RoutineAmount; i++ {
+		c := make(chan []byte, options.RoutineSize)
+		b._routines[i] = c
+		// TODO: 开始监听每个请求队列发送过来的状态消息
+		go b.PushGroupStatus(c)
+	}
 	return
 }
 
@@ -94,6 +109,12 @@ func (b *Bucket) BroadcastRoom(msg kafka.Message) {
 	//TODO:原子加法，将推送消息给对应群聊的请求，按照顺序分发到不同的routines缓冲区
 	idx := atomic.AddUint64(&b.routineIdx, 1) % b.routineNum
 	b.routines[idx] <- msg
+}
+
+func (b *Bucket) BroadcastStatusRoom(msg []byte) {
+	//TODO:原子加法，将推送消息给对应群聊的请求，按照顺序分发到不同的routines缓冲区
+	idx := atomic.AddUint64(&b._routineIdx, 1) % b._routineNum
+	b._routines[idx] <- msg
 }
 
 //PushGroupMsg 专门处理群聊消息推送
@@ -117,22 +138,38 @@ func (b *Bucket) PushGroupMsg(ch chan kafka.Message) {
 					//TODO:对应群聊可能在其他BUCKET中
 					zlog.Debug(fmt.Sprintf("the group of  groupId = %d not in the bucket", groupId))
 				}
+			default:
+				zlog.Error(fmt.Sprintf("the msg get %v", payload))
+			}
+		}
+	}
+}
 
+//PushGroupStatus 专门处理群聊状态消息推送
+func (b *Bucket) PushGroupStatus(ch chan []byte) {
+	for {
+		select {
+		// TODO: MQ中读取的数据会写入ch中
+		case msg := <-ch:
+			// TODO：消息进入处理队列中，并被取出时必须马上进行消费
+			var payload common.MsgSend
+			_ = json.Unmarshal(msg, &payload)
+			switch payload.Op {
 			case common.OpGroupOlineUserCountSend:
 				payload.Msg = new(common.GroupCountMsg)
-				_ = json.Unmarshal(msg.Value, &payload.Msg)
+				_ = json.Unmarshal(msg, &payload.Msg)
 				groupId := payload.Msg.(*common.GroupCountMsg).GroupId
 				if groupNode := b.GetGroupNode(groupId); groupNode != nil {
-					groupNode.PushGroupMsg(msg)
+					groupNode.PushGroupStatusMsg(msg)
 				} else {
 					zlog.Debug(fmt.Sprintf("the group of  groupId = %d not in the bucket", groupId))
 				}
 			case common.OpGroupInfoSend:
 				payload.Msg = new(common.GroupInfoMsg)
-				_ = json.Unmarshal(msg.Value, &payload.Msg)
+				_ = json.Unmarshal(msg, &payload.Msg)
 				groupId := payload.Msg.(*common.GroupInfoMsg).GroupId
 				if groupNode := b.GetGroupNode(groupId); groupNode != nil {
-					groupNode.PushGroupMsg(msg)
+					groupNode.PushGroupStatusMsg(msg)
 				} else {
 					zlog.Debug(fmt.Sprintf("the group of  groupId = %d not in the bucket", groupId))
 				}

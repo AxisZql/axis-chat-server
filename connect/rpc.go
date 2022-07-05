@@ -54,29 +54,11 @@ func (sc *ServerConnect) PushGroupInfoMsg(ctx context.Context, req *proto.PushGr
 		return
 	}
 
-	header := make([]kafka.Header, 0)
-	for _, val := range req.KafkaInfo.Headers {
-		header = append(header, kafka.Header{
-			Key:   val.Key,
-			Value: val.Value,
-		})
-	}
-
 	msgBody, _ := json.Marshal(req.Msg)
-	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
-	kafkaMsg := kafka.Message{
-		Topic:         req.KafkaInfo.Topic,
-		Partition:     int(req.KafkaInfo.Partition),
-		Offset:        req.KafkaInfo.Offset,
-		HighWaterMark: req.KafkaInfo.High_WaterMark,
-		Key:           req.KafkaInfo.Key,
-		Value:         msgBody,
-		Headers:       header,
-		Time:          _time,
-	}
+
 	// todo 遍历bucket推送群聊消息，因为同一个群的成员可以分散在不同的bucket中，故不同bucket中可能有同一个groupNode
 	for _, bucket := range DefaultServer.Buckets {
-		bucket.BroadcastRoom(kafkaMsg)
+		bucket.BroadcastStatusRoom(msgBody)
 	}
 	return
 }
@@ -88,29 +70,10 @@ func (sc *ServerConnect) PushGroupCountMsg(ctx context.Context, req *proto.PushG
 		zlog.Error(err.Error())
 		return
 	}
-	header := make([]kafka.Header, 0)
-	for _, val := range req.KafkaInfo.Headers {
-		header = append(header, kafka.Header{
-			Key:   val.Key,
-			Value: val.Value,
-		})
-	}
-
 	msgBody, _ := json.Marshal(req.Msg)
-	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
-	kafkaMsg := kafka.Message{
-		Topic:         req.KafkaInfo.Topic,
-		Partition:     int(req.KafkaInfo.Partition),
-		Offset:        req.KafkaInfo.Offset,
-		HighWaterMark: req.KafkaInfo.High_WaterMark,
-		Key:           req.KafkaInfo.Key,
-		Value:         msgBody,
-		Headers:       header,
-		Time:          _time,
-	}
 	// todo 遍历bucket推送群聊消息，因为同一个群的成员可以分散在不同的bucket中，故不同bucket中可能有同一个groupNode
 	for _, bucket := range DefaultServer.Buckets {
-		bucket.BroadcastRoom(kafkaMsg)
+		bucket.BroadcastStatusRoom(msgBody)
 	}
 	return
 }
@@ -122,31 +85,12 @@ func (sc *ServerConnect) PushFriendOnlineMsg(ctx context.Context, req *proto.Pus
 		zlog.Error(err.Error())
 		return
 	}
-	header := make([]kafka.Header, 0)
-	for _, val := range req.KafkaInfo.Headers {
-		header = append(header, kafka.Header{
-			Key:   val.Key,
-			Value: val.Value,
-		})
-	}
-
 	msgBody, _ := json.Marshal(req.Msg)
-	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
-	kafkaMsg := kafka.Message{
-		Topic:         req.KafkaInfo.Topic,
-		Partition:     int(req.KafkaInfo.Partition),
-		Offset:        req.KafkaInfo.Offset,
-		HighWaterMark: req.KafkaInfo.High_WaterMark,
-		Key:           req.KafkaInfo.Key,
-		Value:         msgBody,
-		Headers:       header,
-		Time:          _time,
-	}
 	// todo 获取目标推送用户所在的令牌桶
 	bucket := DefaultServer.Bucket(req.Msg.Belong)
 	ch := bucket.GetChannel(req.Msg.Belong)
 	if ch != nil {
-		ch.Push(kafkaMsg) // 向目标用户的消息发送缓冲区中写入消息
+		ch.PushStatus(msgBody) // 向目标用户的消息发送缓冲区中写入消息
 	} else {
 		err = errors.New(fmt.Sprintf("bucket.GetChannel(req.Msg.FriendId=%d) get nil", req.Msg.FriendId))
 		zlog.Error(err.Error())
@@ -161,31 +105,13 @@ func (sc *ServerConnect) PushFriendOfflineMsg(ctx context.Context, req *proto.Pu
 		zlog.Error(err.Error())
 		return
 	}
-	header := make([]kafka.Header, 0)
-	for _, val := range req.KafkaInfo.Headers {
-		header = append(header, kafka.Header{
-			Key:   val.Key,
-			Value: val.Value,
-		})
-	}
 
 	msgBody, _ := json.Marshal(req.Msg)
-	_time, _ := time.ParseInLocation(time.RFC3339, req.KafkaInfo.Time, time.Local)
-	kafkaMsg := kafka.Message{
-		Topic:         req.KafkaInfo.Topic,
-		Partition:     int(req.KafkaInfo.Partition),
-		Offset:        req.KafkaInfo.Offset,
-		HighWaterMark: req.KafkaInfo.High_WaterMark,
-		Key:           req.KafkaInfo.Key,
-		Value:         msgBody,
-		Headers:       header,
-		Time:          _time,
-	}
 	// todo 获取目标推送用户所在的令牌桶
 	bucket := DefaultServer.Bucket(req.Msg.Belong)
 	ch := bucket.GetChannel(req.Msg.Belong)
 	if ch != nil {
-		ch.Push(kafkaMsg) // 向目标用户的消息发送缓冲区中写入消息
+		ch.PushStatus(msgBody) // 向目标用户的消息发送缓冲区中写入消息
 	} else {
 		err = errors.New(fmt.Sprintf("bucket.GetChannel(req.Msg.FriendId=%d) get nil", req.Msg.FriendId))
 		zlog.Error(err.Error())

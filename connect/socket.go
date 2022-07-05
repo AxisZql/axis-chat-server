@@ -13,18 +13,20 @@ import (
  */
 
 type Channel struct {
-	Broadcast  chan kafka.Message //要推送给你当前连接对应用户的消息数据
-	Userid     int64
-	Conn       *websocket.Conn
-	CnnTcp     *net.TCPConn
-	Next       *Channel // 当bucket管理当是群聊节点时，对应当群聊节点维护该群聊所有在在线当用户端连接
-	Prev       *Channel
-	GroupNodes []*GroupNode // 这里需要记录对应的GroupNode，为了后期用户下线的时候，能快速从对应的GroupNode的双向链表中删除对应的Channel，因为一位用户可能有多个群聊
+	BroadcastMsg    chan kafka.Message //要推送给你当前连接对应用户的消息数据
+	BroadcastStatus chan []byte        // 状态消息广播通道
+	Userid          int64
+	Conn            *websocket.Conn
+	CnnTcp          *net.TCPConn
+	Next            *Channel // 当bucket管理当是群聊节点时，对应当群聊节点维护该群聊所有在在线当用户端连接
+	Prev            *Channel
+	GroupNodes      []*GroupNode // 这里需要记录对应的GroupNode，为了后期用户下线的时候，能快速从对应的GroupNode的双向链表中删除对应的Channel，因为一位用户可能有多个群聊
 }
 
 func NewChannel(size int) (s *Channel) {
 	return &Channel{
-		Broadcast: make(chan kafka.Message, size), //最多可以往信道中写入的消息条数为size
+		BroadcastMsg:    make(chan kafka.Message, size), //最多可以往信道中写入的消息条数为size
+		BroadcastStatus: make(chan []byte, size),
 	}
 }
 
@@ -32,7 +34,14 @@ func NewChannel(size int) (s *Channel) {
 //进行消息推送准备
 func (ch *Channel) Push(msg kafka.Message) {
 	select {
-	case ch.Broadcast <- msg:
+	case ch.BroadcastMsg <- msg:
+	default:
+	}
+}
+
+func (ch *Channel) PushStatus(msg []byte) {
+	select {
+	case ch.BroadcastStatus <- msg:
 	default:
 	}
 }

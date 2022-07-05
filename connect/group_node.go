@@ -72,3 +72,14 @@ func (g *GroupNode) PushGroupMsg(msg kafka.Message) {
 	g.mutex.RUnlock()
 	return
 }
+
+func (g *GroupNode) PushGroupStatusMsg(msg []byte) {
+	g.mutex.RLock()
+	for ch := g.socketHead; ch != nil; ch = ch.Next {
+		//to send msg
+		ch.PushStatus(msg)
+	}
+	g.mutex.RUnlock()
+	return
+
+}
