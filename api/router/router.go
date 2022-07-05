@@ -27,13 +27,12 @@ func initUserRouter(r *gin.Engine) {
 	userRouter := r.Group("/user")
 	userRouter.POST("/register", handler.Register)
 	userRouter.POST("/login", handler.Login)
-	userRouter.POST("/check-auth", handler.GetUserInfoByAccessToken)
-	userRouter.POST("/upload-img", handler.UploadImg)      //上传图片
+	userRouter.GET("/check-auth", handler.GetUserInfoByAccessToken)
 	userRouter.POST("/upload-avatar", handler.UploadAvtar) //上传头像
 	userRouter.Use(utils.CheckSession())
 	{
 		userRouter.GET("/login-out", handler.LoginOut)
-		userRouter.POST("/chat-data", handler.GetChatHistoryAfterLogin) //在用户登陆后获取用户所有好友和群聊的聊天消息
+		userRouter.GET("/chat-data", handler.GetChatHistoryAfterLogin) //在用户登陆后获取用户所有好友和群聊的聊天消息
 		userRouter.GET("/info", handler.GetUserInfoByUserid)
 		userRouter.POST("/update-info", handler.UpdateUserInfo)
 		userRouter.POST("/update-password", handler.UpdatePassword)
@@ -57,6 +56,7 @@ func initGroupRouter(r *gin.Engine) {
 
 func initPushRouter(r *gin.Engine) {
 	pushRouter := r.Group("/push")
+	pushRouter.POST("/img-msg", handler.PushImgMsg) //提交图片消息
 	pushRouter.Use(utils.CheckSession())
 	{
 		pushRouter.POST("/push-friend", handler.Push)

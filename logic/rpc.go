@@ -746,6 +746,7 @@ func (s *ServerLogic) Push(ctx context.Context, request *proto.PushRequest) (rep
 		FromUsername: request.Msg.FromUsername,
 		Avatar:       request.Msg.Avatar,
 		Op:           common.OpFriendMsgSend,
+		Watermark:    request.Msg.Watermark,
 	}
 	// 由于采用写扩散的机制，所以要同时往发送和接收方的topic中写入消息
 	payload.Belong = request.Msg.FriendId
@@ -775,6 +776,7 @@ func (s *ServerLogic) PushRoom(ctx context.Context, request *proto.PushRoomReque
 		FromUsername: request.Msg.FromUsername,
 		Avatar:       request.Msg.Avatar,
 		Op:           common.OpGroupMsgSend,
+		Watermark:    request.Msg.Watermark,
 	}
 	err = Push(request.Msg.GroupId, payload, common.OpGroupMsgSend)
 	if err != nil {

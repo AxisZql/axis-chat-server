@@ -114,12 +114,12 @@ func LoginOut(ctx *gin.Context) {
 }
 
 type getUserInfoByAccessTokenReq struct {
-	AccessToken string `json:"accessToken" binding:"required"`
+	AccessToken string `form:"accessToken" binding:"required"`
 }
 
 func GetUserInfoByAccessToken(ctx *gin.Context) {
 	var form getUserInfoByAccessTokenReq
-	if err := ctx.ShouldBindBodyWith(&form, binding.JSON); err != nil {
+	if err := ctx.ShouldBind(&form); err != nil {
 		zlog.Error(err.Error())
 		utils.FailWithMsg(ctx, "参数校验失败")
 		return
@@ -420,56 +420,6 @@ func GetChatHistoryAfterLogin(ctx *gin.Context) {
 		return
 	}
 	utils.SuccessWithMsg(ctx, nil, reply)
-}
-
-type reqSaveChatImage struct {
-	ImageFile *multipart.FileHeader `form:"imageFile" binding:"required"`
-	Ty        string                `form:"ty" binding:"required"`     //图片对象是group还是friend
-	FromId    int64                 `form:"fromId" binding:"required"` //如果是群聊则是groupId，否则是图片发起方的id
-}
-
-func UploadImg(ctx *gin.Context) {
-	var form reqSaveChatImage
-	if err := ctx.ShouldBind(&form); err != nil {
-		zlog.Error(err.Error())
-		utils.FailWithMsg(ctx, "参数校验失败")
-		return
-	}
-	f, _ := form.ImageFile.Open()
-	extendName := strings.Split(form.ImageFile.Filename, ".")
-	if len(extendName) != 2 && extendName[1] != "png" && extendName[1] != "gif" && extendName[1] != "jpg" {
-		utils.FailWithMsg(ctx, "不支持的图片格式;仅支持png|gif|jpg格式")
-		return
-	}
-	defer f.Close()
-	fileData, err2 := ioutil.ReadAll(f)
-	if err2 != nil {
-		zlog.Error(err2.Error())
-		utils.FailWithMsg(ctx, "系统异常")
-		return
-	}
-	conf := config.GetConfig()
-	filePath := conf.Api.Api.ChatImgDir + form.Ty + "/" + fmt.Sprintf("%d/", form.FromId)
-	err := os.MkdirAll(filePath, os.ModePerm)
-	if err != nil {
-		zlog.Error(fmt.Sprintf("创建聊天图片存放目录失败:%v", err))
-		utils.FailWithMsg(ctx, "系统异常")
-		return
-	}
-
-	fileMD5 := fmt.Sprintf("%x", md5.Sum(fileData))
-	fileName := fileMD5 + "." + extendName[1]
-
-	filePath = filePath + fileName
-	err = ctx.SaveUploadedFile(form.ImageFile, filePath)
-	if err != nil {
-		zlog.Error(err.Error())
-		utils.FailWithMsg(ctx, "系统异常")
-		return
-	}
-	//example: https://localhost:8090/images/group/1/8dwekdkjfl.png
-	imgUrl := fmt.Sprintf("%s/images/%s/%d/%s", conf.Api.Api.Host, form.Ty, form.FromId, fileName)
-	utils.SuccessWithMsg(ctx, nil, imgUrl)
 }
 
 type reqUploadAvtar struct {
