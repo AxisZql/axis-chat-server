@@ -24,7 +24,7 @@ var (
 	connectRpcInstance = &ConnectRpcInstance{}
 )
 
-// InitConnectRpcClient 初始化获取logic层的rpc服务客户端
+// InitConnectRpcClient 初始化获取connect层的rpc服务客户端
 func (task *Task) InitConnectRpcClient() {
 	conf := config.GetConfig()
 	etcdAddrList := strings.Split(conf.Common.Etcd.Address, ";")
@@ -38,38 +38,39 @@ func (task *Task) InitConnectRpcClient() {
 
 //todo 因为一个群聊可以在多个serverId中,所以往connect层推送消息时，可以通过redis获取对应群聊所有在线成员所在serverId，然后给这些serverId推送该群聊消息
 
-func (task *Task) pushGroupInfoMsg(serverId string, msg *kafka.Message) {
+func (task *Task) pushGroupInfoMsg(serverId string, msg *common.GroupInfoMsg) {
 	var err error
 	connectRpcInstance.ins, err = serDiscovery.GetServiceByServerId(serverId)
 	if err != nil {
 		zlog.Error(err.Error())
 		return
 	}
-	var payload common.MsgSend
-	payload.Msg = new(proto.PushGroupInfoMsgReq_Msg)
-	_ = json.Unmarshal(msg.Value, &payload)
+
+	var userArr []*proto.User
+	for _, u := range msg.UserArr {
+		t := &proto.User{
+			Id:       u.ID,
+			Username: u.Username,
+			Avatar:   u.Avatar,
+			Role:     int32(u.Role),
+			Status:   int32(u.Status),
+			Tag:      u.Tag,
+			CreateAt: u.CreateAt.Format(time.RFC3339),
+			UpdateAt: u.UpdateAt.Format(time.RFC3339),
+		}
+		userArr = append(userArr, t)
+	}
+
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-
-	headers := make([]*proto.KafkaMsgInfo_Header, 0)
-	for _, val := range msg.Headers {
-		headers = append(headers, &proto.KafkaMsgInfo_Header{
-			Key:   val.Key,
-			Value: val.Value,
-		})
-	}
 	_, err = connectClient.PushGroupInfoMsg(_ctx, &proto.PushGroupInfoMsgReq{
-		Msg: payload.Msg.(*proto.PushGroupInfoMsgReq_Msg),
-		KafkaInfo: &proto.KafkaMsgInfo{
-			Topic:          msg.Topic,
-			Partition:      int32(msg.Partition),
-			Offset:         msg.Offset,
-			High_WaterMark: msg.HighWaterMark,
-			Key:            msg.Key,
-			Value:          msg.Value,
-			Headers:        headers,
-			Time:           msg.Time.Format(time.RFC3339),
+		Msg: &proto.PushGroupInfoMsgReq_Msg{
+			GroupId:       msg.GroupId,
+			Count:         int32(msg.Count),
+			UserArr:       userArr,
+			Op:            int32(msg.Op),
+			OnlineUserIds: msg.OnlineUserIds,
 		},
 	})
 	if err != nil {
@@ -77,25 +78,22 @@ func (task *Task) pushGroupInfoMsg(serverId string, msg *kafka.Message) {
 	}
 }
 
-func (task *Task) pushGroupCountMsg(serverId string, msg *kafka.Message) {
+func (task *Task) pushGroupCountMsg(serverId string, msg *common.GroupCountMsg) {
 	var err error
 	connectRpcInstance.ins, err = serDiscovery.GetServiceByServerId(serverId)
 	if err != nil {
 		zlog.Error(err.Error())
 		return
 	}
-	var payload common.MsgSend
-	payload.Msg = new(proto.PushGroupCountMsgReq_Msg)
-	_ = json.Unmarshal(msg.Value, &payload)
+
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	_, err = connectClient.PushGroupCountMsg(_ctx, &proto.PushGroupCountMsgReq{
-		Msg: payload.Msg.(*proto.PushGroupCountMsgReq_Msg),
-		KafkaInfo: &proto.KafkaMsgInfo{
-			Topic:     msg.Topic,
-			Partition: int32(msg.Partition),
-			Offset:    msg.Offset,
+		Msg: &proto.PushGroupCountMsgReq_Msg{
+			GroupId: msg.GroupId,
+			Count:   int32(msg.Count),
+			Op:      int32(msg.Op),
 		},
 	})
 	if err != nil {
@@ -103,25 +101,23 @@ func (task *Task) pushGroupCountMsg(serverId string, msg *kafka.Message) {
 	}
 }
 
-func (task *Task) pushFriendOnlineMsg(serverId string, msg *kafka.Message) {
+func (task *Task) pushFriendOnlineMsg(serverId string, msg *common.FriendOnlineMsg) {
 	var err error
 	connectRpcInstance.ins, err = serDiscovery.GetServiceByServerId(serverId)
 	if err != nil {
 		zlog.Error(err.Error())
 		return
 	}
-	var payload common.MsgSend
-	payload.Msg = new(proto.PushFriendOnlineMsgReq_Msg)
-	_ = json.Unmarshal(msg.Value, &payload)
+
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	_, err = connectClient.PushFriendOnlineMsg(_ctx, &proto.PushFriendOnlineMsgReq{
-		Msg: payload.Msg.(*proto.PushFriendOnlineMsgReq_Msg),
-		KafkaInfo: &proto.KafkaMsgInfo{
-			Topic:     msg.Topic,
-			Partition: int32(msg.Partition),
-			Offset:    msg.Offset,
+		Msg: &proto.PushFriendOnlineMsgReq_Msg{
+			FriendId:   msg.FriendId,
+			FriendName: msg.FriendName,
+			Op:         int32(msg.Op),
+			Belong:     msg.Belong,
 		},
 	})
 	if err != nil {
@@ -129,25 +125,21 @@ func (task *Task) pushFriendOnlineMsg(serverId string, msg *kafka.Message) {
 	}
 }
 
-func (task *Task) pushFriendOfflineMsg(serverId string, msg *kafka.Message) {
+func (task *Task) pushFriendOfflineMsg(serverId string, msg *common.FriendOfflineMsg) {
 	var err error
 	connectRpcInstance.ins, err = serDiscovery.GetServiceByServerId(serverId)
 	if err != nil {
 		zlog.Error(err.Error())
 		return
 	}
-	var payload common.MsgSend
-	payload.Msg = new(proto.PushFriendOfflineMsgReq_Msg)
-	_ = json.Unmarshal(msg.Value, &payload)
 	connectClient := proto.NewConnectLayerClient(connectRpcInstance.ins.Conn)
 	_ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	_, err = connectClient.PushFriendOfflineMsg(_ctx, &proto.PushFriendOfflineMsgReq{
-		Msg: payload.Msg.(*proto.PushFriendOfflineMsgReq_Msg),
-		KafkaInfo: &proto.KafkaMsgInfo{
-			Topic:     msg.Topic,
-			Partition: int32(msg.Partition),
-			Offset:    msg.Offset,
+		Msg: &proto.PushFriendOfflineMsgReq_Msg{
+			Op:       int32(msg.Op),
+			FriendId: msg.FriendId,
+			Belong:   msg.Belong,
 		},
 	})
 	if err != nil {
