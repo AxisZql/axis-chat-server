@@ -4,6 +4,7 @@ import (
 	"axisChat/utils/zlog"
 	"fmt"
 	"gorm.io/gorm"
+	"sort"
 )
 
 func QueryUserById(id int64, user *TUser) {
@@ -203,7 +204,7 @@ func QueryFriendMessageByPage(userid, friendId int64, msgList *[]VFriendMessage,
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Table("v_friend_message").Where("((userid = ? AND friend_id = ?) OR (friend_id = ? AND userid = ?)) AND belong = ?", userid, friendId, userid, friendId, userid).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
+	r := db.Table("v_friend_message").Where("((userid = ? AND friend_id = ?) OR (friend_id = ? AND userid = ?)) AND belong = ?", userid, friendId, userid, friendId, userid).Order("snow_id DESC").Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -211,6 +212,10 @@ func QueryFriendMessageByPage(userid, friendId int64, msgList *[]VFriendMessage,
 	if r.Error != nil {
 		zlog.Info(r.Error.Error())
 	}
+	// 由于获取的是最近消息，所以还要根据snowId恢复消息顺序
+	sort.Slice(*msgList, func(i, j int) bool {
+		return (*msgList)[i].SnowId < (*msgList)[j].SnowId
+	})
 }
 
 func QueryGroupMessageByPage(groupId int64, msgList *[]VGroupMessage, current int, pageSize int) {
@@ -219,7 +224,7 @@ func QueryGroupMessageByPage(groupId int64, msgList *[]VGroupMessage, current in
 		pageSize = 16
 	}
 	db := GetDb()
-	r := db.Table("v_group_message").Where("group_id = ? AND belong = ?", groupId, groupId).Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
+	r := db.Table("v_group_message").Where("group_id = ? AND belong = ?", groupId, groupId).Order("snow_id DESC").Limit(pageSize).Offset((current - 1) * pageSize).Find(msgList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -227,6 +232,9 @@ func QueryGroupMessageByPage(groupId int64, msgList *[]VGroupMessage, current in
 	if r.Error != nil {
 		zlog.Info(r.Error.Error())
 	}
+	sort.Slice(*msgList, func(i, j int) bool {
+		return (*msgList)[i].SnowId < (*msgList)[j].SnowId
+	})
 }
 
 func CreateRelation(relation *TRelation) {

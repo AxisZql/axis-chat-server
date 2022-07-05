@@ -40,7 +40,7 @@ var (
                        belong
                 from t_message
                 where type = 'group'
-                order by snow_id) m
+                order by snow_id DESC) m
                    join t_group on m.group_id = t_group.id) mg
              join t_user on t_user.id = mg.userid;`
 	vFriendMessage = `
@@ -57,7 +57,7 @@ var (
                        belong
                 from t_message
                 where type = 'friend'
-                order by snow_id) m
+                order by snow_id DESC) m
                    join t_user as friend on m.friend_id = friend.id) mf
              join t_user on t_user.id = mf.userid;`
 )
