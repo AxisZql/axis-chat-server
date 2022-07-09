@@ -112,22 +112,12 @@ func InitConfig() {
 		if err != nil {
 			panic(err)
 		}
-		viper.SetConfigName("task")
-		err = viper.MergeInConfig()
-		if err != nil {
-			panic(err)
-		}
 		viper.SetConfigName("connect")
 		err = viper.MergeInConfig()
 		if err != nil {
 			panic(err)
 		}
 		viper.SetConfigName("logic")
-		err = viper.MergeInConfig()
-		if err != nil {
-			panic(err)
-		}
-		viper.SetConfigName("task")
 		err = viper.MergeInConfig()
 		if err != nil {
 			panic(err)

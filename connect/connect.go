@@ -87,7 +87,7 @@ func registerServer2Etcd(address string, serverId string) {
 	}
 	// TODO:logic层服务注册到etcd服务上到路径
 	serverPathInEtcd := fmt.Sprintf("%s/%s&serverId=%s&address=%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathConnect, serverId, address)
-	ser, err := etcd.NewServiceRegister(endpoint, serverPathInEtcd, address, 6, 5)
+	ser, err := etcd.NewServiceRegister(endpoint, serverPathInEtcd, address, 6, 10)
 	if err != nil {
 		panic(err)
 	}

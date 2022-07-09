@@ -31,7 +31,7 @@ func InitLogicClient() {
 	// 轮询获取对应serverId下的logic layer rpc服务实例,这获取实例是为了确保在程序开始运行之前有可用的logic layer rpc实例
 	_, err = serDiscovery.GetServiceByServerId(conf.LogicRpc.Logic.ServerId)
 	if err != nil {
-		panic(err.Error())
+		zlog.Error(err.Error())
 	}
 	logicRpcInstance.serverId = conf.LogicRpc.Logic.ServerId
 }

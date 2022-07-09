@@ -32,7 +32,7 @@ func (task *Task) InitConnectRpcClient() {
 	//TODO：从etcd中 获取所有logic layer 的服务地址列表，并监听其改变
 	err := serDiscovery.WatchService(fmt.Sprintf("%s/%s", conf.Common.Etcd.BasePath, conf.Common.Etcd.ServerPathConnect))
 	if err != nil {
-		panic(err)
+		zlog.Error(err.Error())
 	}
 }
 

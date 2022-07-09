@@ -39,7 +39,7 @@ func (c *Connect) InitLogicClient() {
 	// 轮询获取对应serverId下的logic layer rpc服务实例
 	logicRpcInstance.ins, err = serDiscovery.GetServiceByServerId(conf.LogicRpc.Logic.ServerId)
 	if err != nil {
-		panic(err.Error())
+		zlog.Error(err.Error())
 	}
 	logicRpcInstance.serverId = conf.LogicRpc.Logic.ServerId
 }
