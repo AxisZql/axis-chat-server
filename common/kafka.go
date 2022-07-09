@@ -23,11 +23,11 @@ type KafkaProducerConn struct {
 	CreateTime map[string]time.Time // 记录连接建立的时间
 }
 
-type KafkaConsumerReader struct {
-	mutex      sync.RWMutex
-	ReaderMap  map[string]*kafka.Reader
-	CreateTime map[string]time.Time
-}
+//type KafkaConsumerReader struct {
+//	mutex      sync.RWMutex
+//	ReaderMap  map[string]*kafka.Reader
+//	CreateTime map[string]time.Time
+//}
 
 var (
 	producerConnMap = &KafkaProducerConn{
@@ -35,10 +35,10 @@ var (
 		CreateTime: make(map[string]time.Time),
 	}
 
-	consumerReader = &KafkaConsumerReader{
-		ReaderMap:  make(map[string]*kafka.Reader),
-		CreateTime: make(map[string]time.Time),
-	}
+	//consumerReader = &KafkaConsumerReader{
+	//	ReaderMap:  make(map[string]*kafka.Reader),
+	//	CreateTime: make(map[string]time.Time),
+	//}
 
 	_once sync.Once
 )
@@ -109,9 +109,10 @@ func getProducerConn(objectId int64, _type string) (*kafka.Conn, error) {
 	producerConnMap.mutex.Lock()
 	defer producerConnMap.mutex.Unlock()
 	// 为保证整体消息的有序性，每个topic的partition数为0
-	conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+	address := config.GetConfig().Common.Kafka.Address
+	conn, err := kafka.DialLeader(context.Background(), "tcp", address, topic, 0)
 	if err != nil {
-		err = errors.Wrap(err, "get topic:%s from Kafka failure")
+		err = errors.Wrap(err, fmt.Sprintf("get topic:%s from Kafka failure host=%v", topic, address))
 		return nil, err
 	}
 
@@ -128,7 +129,7 @@ func TopicProduce(objectId int64, _type string, msg []byte) error {
 	} else if _type == "group" {
 		topic = fmt.Sprintf(GroupQueuePrefix, objectId)
 	} else {
-		return errors.New(fmt.Sprintf("_type = %s is not alllow", _type))
+		return errors.New(fmt.Sprintf("_type = %v is not alllow", _type))
 	}
 	conn, err := getProducerConn(objectId, _type)
 	if err != nil {
@@ -169,21 +170,11 @@ func TopicProduce(objectId int64, _type string, msg []byte) error {
 // ===================消费者===============
 
 func getConsumerReader(groupId string, topic string) (*kafka.Reader, error) {
-	consumerReader.mutex.RLock()
-	if reader, ok := consumerReader.ReaderMap[groupId]; ok {
-		consumerReader.mutex.RUnlock()
-		consumerReader.mutex.Lock()
-		consumerReader.CreateTime[groupId] = time.Now()
-		consumerReader.mutex.Unlock()
-		return reader, nil
-	}
-	consumerReader.mutex.RUnlock()
-
-	// todo 为了确保kafka Reader客户端能够被正常初始化，且不产生死锁，故将加写锁操作提前
-	consumerReader.mutex.Lock()
-	defer consumerReader.mutex.Unlock()
+	var (
+		reader *kafka.Reader
+	)
 	// 为保证整体消息的有序性，每个topic的partition数为1
-	reader := kafka.NewReader(kafka.ReaderConfig{
+	reader = kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  []string{config.GetConfig().Common.Kafka.Address},
 		Topic:    topic,
 		GroupID:  groupId,
@@ -192,8 +183,6 @@ func getConsumerReader(groupId string, topic string) (*kafka.Reader, error) {
 	})
 
 	zlog.Info("success init kafka topic consumer reader!!!")
-	consumerReader.ReaderMap[topic] = reader
-	consumerReader.CreateTime[topic] = time.Now()
 	return reader, nil
 }
 

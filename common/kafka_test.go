@@ -11,7 +11,8 @@ import (
 
 func GetAllTopic() {
 	// 获取当前broke下所有topic
-	conn, err := kafka.Dial("tcp", "localhost:9092")
+	conn, err := kafka.DialLeader(context.Background(), "tcp", "192.168.101.42:9092", "group_chat_2", 0)
+
 	if err != nil {
 		panic(err.Error())
 	}
