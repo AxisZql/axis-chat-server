@@ -32,8 +32,8 @@ type Instance struct {
 func NewServiceDiscovery(endpoints []string) *ServiceDiscovery {
 	//初始化etcd client v3
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   endpoints,       // etcd cluster address
-		DialTimeout: 5 * time.Second, //最长超时失效时间
+		Endpoints:   endpoints,        // etcd cluster address
+		DialTimeout: 10 * time.Second, //最长超时失效时间
 	})
 
 	if err != nil {
@@ -174,11 +174,13 @@ func (s *ServiceDiscovery) GetServiceByServerId(serverId string) (ins *Instance,
 	_, ok := s.serverList[serverId]
 	if !ok {
 		err = errors.New("the serverId does not exist!!!")
+		s.lock.RUnlock()
 		return
 	}
 	if len(s.serverList[serverId]) == 0 {
 		zlog.Error(fmt.Sprintf("no logic layer service instance are available!!!! 「len(s.serverList[serverId])=%d   len(s.serverKey[serverId])=%d」", len(s.serverList[serverId]), len(s.serverKey[serverId])))
 		err = errors.New("no logic layer service instance are available")
+		s.lock.RUnlock()
 		return nil, err
 	}
 	// 开始轮询获取同一个serverId下的实例

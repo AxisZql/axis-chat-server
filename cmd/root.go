@@ -37,12 +37,16 @@ var module string
 func init() {
 	// 通过获取命令行标志位来设置启动的模式
 	rootCmd.PersistentFlags().StringVarP(&module, "module", "m", "logic", "set the class of service to run")
+	ok := os.Getenv("APP_MODULE")
+	if ok != "" {
+		module = ok
+	}
 }
 
 func Execute() {
 	//module = "api"
 	//module = "connect_websocket"
-	module = "task"
+	//module = "task"
 	switch module {
 	case "logic":
 		// 逻辑层服务
