@@ -14,7 +14,7 @@ func (task *Task) fetchRedisQueueMsg() {
 		if len(res) < 2 {
 			continue
 		}
-		time.Sleep(500 * time.Millisecond) // 因为在触发登陆时redis还没有写入对应用户的serverId所以先睡以下
+		time.Sleep(1000 * time.Millisecond) // 因为在触发登陆时redis还没有写入对应用户的serverId所以先睡1s
 		task.PushStatusMsg([]byte(res[1]))
 	}
 }

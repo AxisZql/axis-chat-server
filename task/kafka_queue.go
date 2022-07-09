@@ -5,7 +5,6 @@ import (
 	"axisChat/utils/zlog"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"strconv"
@@ -82,18 +81,17 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 			topic := fmt.Sprintf(common.GroupQueuePrefix, groupId)
 			newTopicMap[topic] = struct{}{}
 			onlineObj.mutex.RLock()
-			if _, ok := onlineObj.OnlineTopic[topic]; !ok {
+			_, ok := onlineObj.OnlineTopic[topic]
+			onlineObj.mutex.RUnlock()
+			if !ok {
 				// 更新在线表
-				onlineObj.mutex.RUnlock()
 				onlineObj.mutex.Lock()
 				onlineObj.OnlineTopic[topic] = struct{}{}
+				onlineObj.mutex.Unlock()
 				// 如果是新上线的Group
 
 				newTopicTarget <- topic
-				onlineObj.mutex.Unlock()
-				onlineObj.mutex.RLock()
 			}
-			onlineObj.mutex.RUnlock()
 		}
 	}
 	for k, v := range userMap {
@@ -103,17 +101,16 @@ func (task *Task) updateOnlineObj(done chan struct{}) {
 			newTopicMap[topic] = struct{}{}
 
 			onlineObj.mutex.RLock()
-			if _, ok := onlineObj.OnlineTopic[topic]; !ok {
-				onlineObj.mutex.RUnlock()
+			_, ok := onlineObj.OnlineTopic[topic]
+			onlineObj.mutex.RUnlock()
+			if !ok {
+				// 如果是新上线的User
 				onlineObj.mutex.Lock()
 				onlineObj.OnlineTopic[topic] = struct{}{}
-				// 如果是新上线的User
+				onlineObj.mutex.Unlock()
 
 				newTopicTarget <- topic
-				onlineObj.mutex.Unlock()
-				onlineObj.mutex.RLock()
 			}
-			onlineObj.mutex.RUnlock()
 		}
 	}
 
@@ -176,13 +173,7 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 	defer func() {
 		objTrigger.mutex.Lock()
 		defer objTrigger.mutex.Unlock()
-		switch ty {
-		case "group":
-			delete(onlineObj.OnlineTopic, topic)
-		case "user":
-			delete(onlineObj.OnlineTopic, topic)
-		}
-
+		delete(onlineObj.OnlineTopic, topic)
 	}()
 
 	//群聊消息，只要被一个reader正确提交偏移量就算成功消费，故对应一个群聊消息的消费组只有一个
@@ -264,15 +255,19 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 	initKafkaReader()
 	_, _ = redisLock.Release() // 初始化reader后，释放分布式锁
 
-	// 第一次投递消息
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
 
+	// 第一次投递消息
+	ctx, cancel = context.WithCancel(context.Background())
 	fetchNext := make(chan struct{}) //触发topic中下一个偏移量消息的获取
 	resChannel := make(chan kafkaResp)
 	go task.fetchNextOffsetMsg(ctx, kr.reader, fetchNext, resChannel, topic)
 	fetchNext <- struct{}{} // 推动量,开始监听对应topic
 	defer func() {
+		cancel()
 		close(fetchNext)
 		close(resChannel)
 	}()
@@ -307,7 +302,9 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 					zlog.Error(fmt.Sprintf("%v", err))
 					initKafkaReader()
 
-					// 出现异常后重新初始化监听对应的topic
+					// 出现异常后重新初始化监听对应的topic,并销毁之前监听的进程
+					cancel()
+					ctx, cancel = context.WithCancel(context.Background())
 					go task.fetchNextOffsetMsg(ctx, kr.reader, fetchNext, resChannel, topic)
 					fetchNext <- struct{}{}
 					break
@@ -323,9 +320,12 @@ func (task *Task) fetchMsgFromTopic(ty string, id int64, topic string) {
 					case <-checkPreSend.C:
 						// 如果获取分布式锁超过30s则证明前一次投递消息失败
 						if curOffset > 0 {
-							kr.mutex.Lock()
-							_ = kr.reader.Close()
-							kr.mutex.Unlock()
+							zlog.Error(fmt.Sprintf("topic = %s 消息投递超时，触发超时重传机制", topic))
+							initKafkaReader()
+							cancel()
+							ctx, cancel = context.WithCancel(context.Background())
+							go task.fetchNextOffsetMsg(ctx, kr.reader, fetchNext, resChannel, topic)
+							fetchNext <- struct{}{}
 						}
 						fetchNext <- struct{}{} // 应该由fetchNextOffsetMsg抛出异常然后触发reader重新初始化
 						break over
@@ -363,41 +363,27 @@ func (task *Task) fetchNextOffsetMsg(ctx context.Context, reader *kafka.Reader, 
 	defer zlog.Debug(fmt.Sprintf("fetchNextOffsetMsg「退出」topic=%s 的监听", topic))
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case <-fetchNext: // 前一次消息被消费成功才能进行新对消息推送
-			begin := time.Now()
-			msg, err := reader.FetchMessage(context.Background())
-			//msg, err := reader.FetchMessage(ctx)
-			onlineObj.mutex.RLock()
-			_, ok := onlineObj.OnlineTopic[msg.Topic]
-			onlineObj.mutex.RUnlock()
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				begin := time.Now()
+				msg, err := reader.FetchMessage(context.Background())
 
-			if !ok {
-				// 对应topic的持有对象下线则停止对该topic对监听
-				time.Sleep(2 * time.Second)
-				zlog.Error(err.Error())
-				for {
-					select {
-					case _, open := <-resChannel:
-						if !open {
-							return
-						}
-					default:
-						resChannel <- kafkaResp{
-							msg: msg,
-							err: errors.New("exit"),
-						}
+				select {
+				case _, ok := <-resChannel:
+					// 确保父goroutine没有结束
+					if !ok {
 						return
 					}
+				default:
+					resChannel <- kafkaResp{
+						msg: msg,
+						err: err,
+					}
 				}
-			}
-
-			zlog.Info(fmt.Sprintf("「 fetch Msg 」 topic = %s cur offset = %v Spend time = %v", msg.Topic, msg.Offset, time.Since(begin)))
-
-			resChannel <- kafkaResp{
-				msg: msg,
-				err: err,
+				zlog.Info(fmt.Sprintf("「 fetch Msg 」 topic = %s cur offset = %v Spend time = %v", msg.Topic, msg.Offset, time.Since(begin)))
 			}
 		}
 	}
