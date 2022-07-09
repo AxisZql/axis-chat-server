@@ -1,0 +1,78 @@
+version: "3.7"
+
+networks:
+  axis-chat-net:
+services:
+  axis-logic:
+    container_name: axis-logic
+    build: .
+    ports:
+      - "9100:9100"
+      - "9101:9101"
+    environment:
+      - RUN_MODE=prod
+      - APP_MODULE=logic
+    restart: always
+    volumes:
+      - ./config/:/home/config/
+    networks:
+      - axis-chat-net
+    privileged: true
+  axis-api:
+    container_name: axis-api
+    build: .
+    ports:
+      - "8090:8090"
+    environment:
+      - RUN_MODE=prod
+      - APP_MODULE=api
+    restart: always
+    volumes:
+      - ./static:/home/static
+      - ./config/:/home/config/
+    networks:
+      - axis-chat-net
+    privileged: true
+  axis-connect:
+    container_name: axis-connect
+    build: .
+    ports:
+      - "8100:8100"
+      - "9200:9200"
+      - "9201:9201"
+    environment:
+      - RUN_MODE=prod
+      - APP_MODULE=connect_websocket
+    volumes:
+      - ./config/:/home/config/
+    restart: always
+    networks:
+      - axis-chat-net
+    privileged: true
+  axis-task:
+    container_name: axis-task
+    build: .
+    environment:
+      - RUN_MODE=prod
+      - APP_MODULE=task
+    restart: always
+    volumes:
+      - ./config/:/home/config/
+    networks:
+      - axis-chat-net
+    privileged: true
+  axis-nginx:
+    container_name: axis-nginx
+    build: ./deployment/nginx
+    ports:
+      - "80:80"
+    environment:
+      - RUN_MODE=prod
+    volumes:
+      - ./cmd/static/:/usr/share/upload/static/
+      - ./deployment/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./deployment/nginx/frontend/axis-chat/:/usr/share/nginx/html/vue/axis-chat/
+    restart: always
+    networks:
+      - axis-chat-net
+    privileged: true
