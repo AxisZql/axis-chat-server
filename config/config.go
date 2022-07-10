@@ -56,10 +56,11 @@ type Config struct {
 	}
 	Api struct {
 		Api struct {
-			Host         string `mapstructure:"host"`
-			Port         int    `mapstructure:"port"`
-			ChatImgDir   string `mapstructure:"chatImgDir"`
-			AvatarImgDir string `mapstructure:"avatarImgDir"`
+			Host          string `mapstructure:"host"`
+			Port          int    `mapstructure:"port"`
+			ChatImgDir    string `mapstructure:"chatImgDir"`
+			AvatarImgDir  string `mapstructure:"avatarImgDir"`
+			DefaultAvatar string `mapstructure:"defaultAvatar"`
 		} `mapstructure:"api"`
 	}
 

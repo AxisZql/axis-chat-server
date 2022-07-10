@@ -212,6 +212,7 @@ func (s *ServerLogic) Register(ctx context.Context, request *proto.RegisterReque
 		return
 	}
 	user.Password = pwd
+	user.Avatar = config.GetConfig().Api.Api.DefaultAvatar
 	db.CreateUser(user)
 	if user.ID == 0 {
 		err = errors.New("系统异常")
@@ -228,6 +229,7 @@ func (s *ServerLogic) Register(ctx context.Context, request *proto.RegisterReque
 	}
 	reply.Code = config.SuccessReplyCode
 	reply.AccessToken = accessToken
+	reply.Userid = user.ID
 	return
 }
 

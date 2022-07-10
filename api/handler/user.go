@@ -48,6 +48,15 @@ func Register(ctx *gin.Context) {
 		utils.ResponseWithCode(ctx, utils.CodeUnknownError, nil, nil)
 		return
 	}
+
+	// 新用户初始加入大群聊
+	_, err2 := client.AddGroup(_ctx, &proto.AddGroupRequest{
+		GroupId: 1,
+		Userid:  reply.Userid,
+	})
+	if err2 != nil {
+		zlog.Error(err.Error())
+	}
 	utils.ResponseWithCode(ctx, int(reply.Code), nil, reply.AccessToken)
 }
 
@@ -482,8 +491,8 @@ func UploadAvtar(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "系统异常")
 		return
 	}
-	//example: https://localhost:8090/avatars/1/8dwekdkjfl.png
-	imgUrl := fmt.Sprintf("%s/avatars/%d/%s", conf.Api.Api.Host, reply.User.Id, fileName)
+	//example: https://localhost:8090/api/avatars/1/8dwekdkjfl.png
+	imgUrl := fmt.Sprintf("%s/api/avatars/%d/%s", conf.Api.Api.Host, reply.User.Id, fileName)
 	user := db.TUser{
 		ID:     reply.User.Id,
 		Avatar: imgUrl,

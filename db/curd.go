@@ -53,7 +53,7 @@ func QueryUserAllGroupId(userid int64) (groupIdList []int64) {
 func QueryUserAllFriendId(userid int64) (friendIdList []int64) {
 	db := GetDb()
 	var relationList []TRelation
-	r := db.Where("object_a = ? AND type = ?", userid, "friend").Find(&relationList)
+	r := db.Where("(object_a = ? OR object_b = ?) AND type = ?", userid, userid, "friend").Find(&relationList)
 	if r.Error != nil && r.Error != gorm.ErrRecordNotFound {
 		zlog.Error(r.Error.Error())
 		return
@@ -63,7 +63,12 @@ func QueryUserAllFriendId(userid int64) (friendIdList []int64) {
 	}
 	friendIdList = make([]int64, 0)
 	for _, val := range relationList {
-		friendIdList = append(friendIdList, val.ObjectB)
+		if val.ObjectB != userid {
+			friendIdList = append(friendIdList, val.ObjectB)
+		}
+		if val.ObjectA != userid {
+			friendIdList = append(friendIdList, val.ObjectA)
+		}
 	}
 	return friendIdList
 }

@@ -183,7 +183,7 @@ func (ws *WsServer) writePump(ch *Channel) {
 							lock, _ = rLock.Acquire()
 							time.Sleep(time.Millisecond * 290)
 						}
-						err = common.RedisHSet(fmt.Sprintf(common.GroupLetterBox, ch.Userid), _msg.SnowId, body)
+						err = common.RedisHSet(fmt.Sprintf(common.UserLetterBox, ch.Userid), _msg.SnowId, body)
 						_, _ = rLock.Release()
 						if err != nil {
 							zlog.Error(fmt.Sprintf("Failed to temporarily store data 「err=%v」", err))

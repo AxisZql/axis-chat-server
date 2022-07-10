@@ -56,10 +56,10 @@ const RedisLock string = "axis:redis_lock:%s"
 // UserLetterBox GroupLetterBox 是暂时存放已经消费的数据但是为被持久化的数据，然后定时批量持久化
 const UserLetterBox string = "axis_user_letter_box:%d"
 
-const GroupLetterBox string = "axis_group_letter_box%d"
+const GroupLetterBox string = "axis_group_letter_box:%d"
 
 // PersistentLock 数据批量持久化时要加上分布式锁
-const PersistentLock string = "axis_persistent_lock%s"
+const PersistentLock string = "axis_persistent_lock:%s"
 
 type RedisClient struct {
 	Client map[string]*redis.Client

@@ -257,8 +257,8 @@ func PushImgMsg(ctx *gin.Context) {
 		utils.FailWithMsg(ctx, "系统异常")
 		return
 	}
-	//example: https://localhost:8090/images/group/1/8dwekdkjfl.png
-	imgUrl := fmt.Sprintf("%s/images/%s/%d/%s", conf.Api.Api.Host, form.Ty, form.FromId, fileName)
+	//example: https://localhost:8090/api/images/group/1/8dwekdkjfl.png
+	imgUrl := fmt.Sprintf("%s/api/images/%s/%d/%s", conf.Api.Api.Host, form.Ty, form.FromId, fileName)
 
 	// 将图片消息写入Kafka对应的topic
 	switch form.Ty {
